@@ -347,10 +347,10 @@ const EQUIPMENT_TABLE = [
   { name: 'Crystal Saber', slot: 'weapon', weaponType: 'melee', tier: 2, rarity: 'rare', attack: 10, defense: 0, hp: 5, critChance: 0.08, attackSpeed: 0.15, cost: 60 },
   { name: 'Crystal Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 2, rarity: 'rare', attack: 7, defense: 0, hp: 0, critChance: 0.12, attackSpeed: -0.05, cost: 60 },
   { name: 'Crystal Mail', slot: 'armor', tier: 2, rarity: 'rare', attack: 0, defense: 10, hp: 35, critChance: 0, attackSpeed: 0, cost: 60 },
-  { name: 'Shadow Fang', slot: 'weapon', weaponType: 'melee', tier: 3, rarity: 'epic', attack: 15, defense: 0, hp: 0, critChance: 0.12, attackSpeed: 0.2, cost: 100 },
+  { name: 'Shadow Fang', slot: 'weapon', weaponType: 'melee', tier: 3, rarity: 'epic', attack: 15, defense: 0, hp: 0, critChance: 0.12, attackSpeed: 0.2, cost: 100, heavy: true },
   { name: 'Shadow Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 3, rarity: 'epic', attack: 11, defense: 0, hp: 0, critChance: 0.15, attackSpeed: 0, cost: 100 },
   { name: 'Treant Bark', slot: 'armor', tier: 3, rarity: 'epic', attack: 0, defense: 14, hp: 50, critChance: 0, attackSpeed: 0, cost: 100 },
-  { name: 'Ember Blade', slot: 'weapon', weaponType: 'melee', tier: 4, rarity: 'legendary', attack: 22, defense: 0, hp: 10, critChance: 0.15, attackSpeed: 0.25, cost: 180 },
+  { name: 'Ember Blade', slot: 'weapon', weaponType: 'melee', tier: 4, rarity: 'legendary', attack: 22, defense: 0, hp: 10, critChance: 0.15, attackSpeed: 0.25, cost: 180, heavy: true },
   { name: 'Ember Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 4, rarity: 'legendary', attack: 16, defense: 0, hp: 0, critChance: 0.2, attackSpeed: 0.05, cost: 180 },
   { name: 'Molten Aegis', slot: 'armor', tier: 4, rarity: 'legendary', attack: 2, defense: 20, hp: 70, critChance: 0, attackSpeed: 0, cost: 180 },
   // Repeating Crossbows (combo crafted)
@@ -1059,8 +1059,17 @@ function updateAdventure() {
   if (advState.phase !== 'combat') return;
 
   // Hero attack — 2x slower (8.33 instead of 16.67)
-  advState.heroAttackTimer += 8.33;
   const heroAtkInterval = 1000 / stats.attackSpeed;
+  const heroWeaponType = STATE.equipped.weapon?.weaponType || 'melee';
+  const anyInRange = heroWeaponType === 'ranged'
+    ? advState.enemies.some(e => e.alive)
+    : advState.enemies.some(e => e.alive && (e.col - advState.heroCol) <= MELEE_RANGE + 3);
+
+  if (!anyInRange) {
+    advState.heroAttackTimer = heroAtkInterval; // Primed to fire instantly
+  } else {
+    advState.heroAttackTimer += 8.33;
+  }
   if (advState.heroAttackAnim > 0) advState.heroAttackAnim--;
   if (advState.heroHitFlash > 0) advState.heroHitFlash--;
 
@@ -1070,7 +1079,6 @@ function updateAdventure() {
     if (hasAlive) {
       advState.heroAttackAnim = 36;
       const isCrit = Math.random() < stats.critChance;
-      const heroWeaponType = STATE.equipped.weapon?.weaponType || 'melee';
 
       if (heroWeaponType === 'ranged') {
         // Ranged: spawn projectile (existing behavior)
@@ -1098,47 +1106,44 @@ function updateAdventure() {
             '-', '#fff', 1.5, (Math.random()-0.5) * 0.1, 8);
         }
       } else {
-        // Melee: hit nearest alive enemy within MELEE_RANGE directly
-        let nearest = null;
-        let nearestDist = Infinity;
+        // Melee: hit ALL alive enemies within MELEE_RANGE (infinite pierce)
+        let hitAny = false;
         for (const e of advState.enemies) {
           if (!e.alive) continue;
           const dist = e.col - advState.heroCol;
-          if (dist < nearestDist) {
-            nearestDist = dist;
-            nearest = e;
-          }
-        }
-        if (nearest && nearestDist <= MELEE_RANGE + 3) {
-          let dmg = Math.max(1, stats.attack - nearest.defense);
+          if (dist > MELEE_RANGE + 3) continue;
+
+          hitAny = true;
+          let dmg = Math.max(1, stats.attack - e.defense);
           if (isCrit) dmg *= 2;
-          nearest.currentHp -= dmg;
-          nearest.hitFlash = 9;
+          e.currentHp -= dmg;
+          e.hitFlash = 9;
 
           if (isCrit) {
-            addFloatingText(nearest.col, nearest.row - 1, 'CRIT! ' + String(dmg), '#ff0');
+            addFloatingText(e.col, e.row - 1, 'CRIT! ' + String(dmg), '#ff0');
             for (let j = 0; j < 8; j++) {
               const angle = (j / 8) * Math.PI * 2;
-              addParticle(nearest.col + 2, nearest.row + 1,
+              addParticle(e.col + 2, e.row + 1,
                 '*', '#ff0', Math.cos(angle) * 0.5, Math.sin(angle) * 0.3, 14);
             }
           } else {
-            addFloatingText(nearest.col, nearest.row - 1, String(dmg), '#fff');
+            addFloatingText(e.col, e.row - 1, String(dmg), '#fff');
           }
 
-          if (nearest.currentHp <= 0) {
-            handleEnemyDeath(nearest);
+          if (e.currentHp <= 0) {
+            handleEnemyDeath(e);
           }
 
           // Slash particles at enemy position
           const slashChars = ['/', '|', '\\', '*'];
           for (let i = 0; i < 5; i++) {
             const ch = slashChars[i % slashChars.length];
-            addParticle(nearest.col + Math.random()*3, nearest.row + Math.random()*2,
+            addParticle(e.col + Math.random()*3, e.row + Math.random()*2,
               ch, '#fff', (Math.random()-0.5)*0.5, (Math.random()-0.5)*0.3, 12);
           }
-        } else if (nearest) {
-          // Out of melee range — show a swing but no hit, walk closer next frame
+        }
+        if (!hitAny) {
+          // No enemies in melee range — show a swing but no hit
           const slashChars = ['/', '|', '\\'];
           for (let i = 0; i < 3; i++) {
             const ch = slashChars[i % slashChars.length];
@@ -1264,9 +1269,36 @@ function drawAdventure() {
   if (advState.phase === 'walking') {
     heroSprite = advState.walkCycle % 40 < 20 ? heroSpriteSet.walk : heroSpriteSet.idle;
   }
-  if (advState.heroAttackAnim > 0) heroSprite = heroSpriteSet.attack;
+  let heroDrawCol = advState.heroCol;
+  if (advState.heroAttackAnim > 0) {
+    heroSprite = heroSpriteSet.attack;
+    const t = advState.heroAttackAnim;
+    const weaponColor = '#fff';
+    const isHeavy = STATE.equipped.weapon?.heavy;
+
+    if (isHeavy) {
+      // Down-to-up swing, hero recoils visually
+      if (t > 24) heroDrawCol = advState.heroCol - 1;
+      if (t > 24) {
+        drawStr(advState.heroCol + 3, advState.heroRow + 2, '\\', weaponColor);
+      } else if (t > 12) {
+        drawStr(advState.heroCol + 3, advState.heroRow + 1, '\u2500', weaponColor);
+      } else {
+        drawStr(advState.heroCol + 3, advState.heroRow - 1, '/', weaponColor);
+      }
+    } else {
+      // Up-to-down swing (light)
+      if (t > 24) {
+        drawStr(advState.heroCol + 3, advState.heroRow - 1, '/', weaponColor);
+      } else if (t > 12) {
+        drawStr(advState.heroCol + 3, advState.heroRow + 1, '\u2500', weaponColor);
+      } else {
+        drawStr(advState.heroCol + 3, advState.heroRow + 2, '\\', weaponColor);
+      }
+    }
+  }
   if (advState.heroHitFlash > 0 && advState.heroHitFlash % 2 === 0) heroColor = '#f33';
-  drawSprite(heroSprite, advState.heroCol, advState.heroRow, heroColor);
+  drawSprite(heroSprite, heroDrawCol, advState.heroRow, heroColor);
 
   // Enemies
   for (let ei = 0; ei < advState.enemies.length; ei++) {
