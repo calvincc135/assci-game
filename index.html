@@ -173,10 +173,10 @@ const AREAS = [
     bgColor: '#332',
     groundChar: '.',
     enemies: [
-      { name: 'Skeleton', type: 'melee', sprite: [' O ','/|\\','/ \\'], walkSprite: [' O ','/|\\','/> '], attackSprite: [' O ','_|--','/ \\'], color: '#cba', hp: 20, attack: 4, defense: 1, speed: 0.8 },
-      { name: 'Dire Rat', type: 'melee', sprite: ['/\\_/\\','( o.o)','> ^ <'], walkSprite: ['/\\_/\\','( o.o)','>  ^<'], attackSprite: ['/\\_/\\','(>o.o)>','> ^ <'], color: '#987', hp: 15, attack: 5, defense: 0, speed: 1.2 }
+      { name: 'Skeleton', type: 'melee', sprite: [' O ','/†\\','/ \\'], walkSprite: [' O ','/†\\','/> '], attackSprite: [' O ','_†--','/ \\'], color: '#cba', hp: 20, attack: 4, defense: 1, speed: 0.8 },
+      { name: 'Dire Rat', type: 'melee', sprite: ['/\\_/\\','( o.o)','> ‡ <'], walkSprite: ['/\\_/\\','( o.o)','>  ‡<'], attackSprite: ['/\\_/\\','(>o.o)>','> ‡ <'], color: '#987', hp: 15, attack: 5, defense: 0, speed: 1.2 }
     ],
-    boss: { name: 'Bone Knight', type: 'melee', sprite: ['  [+]  ',' /###\\ ','/ |=| \\','  | |  ','  d b  '], walkSprite: ['  [+]  ',' /###\\ ','/ |=| \\','  | |  ','  d  b '], attackSprite: ['  [+]  ',' /###\\ ','--|=| \\','  | |  ','  d b  '], color: '#fed', hp: 80, attack: 8, defense: 4, speed: 0.7 },
+    boss: { name: 'Bone Knight', type: 'melee', sprite: ['  [†]  ',' /###\\ ','/ |‡| \\','  | |  ','  d b  '], walkSprite: ['  [†]  ',' /###\\ ','/ |‡| \\','  | |  ','  d  b '], attackSprite: ['  [†]  ',' /###\\ ','--|‡| \\','  | |  ','  d b  '], color: '#fed', hp: 80, attack: 8, defense: 4, speed: 0.7 },
     landscape: { mountains: '/\\/\\_/\\', trees: '  +  \n /|\\ \n  |  ', ground: '...,,,___...,,,...' }
   },
   {
@@ -197,10 +197,10 @@ const AREAS = [
     bgColor: '#224',
     groundChar: '*',
     enemies: [
-      { name: 'Crystal Spider', type: 'melee', sprite: ['/\\o/\\','\\ | /','/ | \\'], walkSprite: ['/\\o/\\','\\>| /','/ |< '], attackSprite: ['/\\o/\\','-\\|/-','/ | \\'], color: '#aaf', hp: 30, attack: 9, defense: 3, speed: 1.1 },
-      { name: 'Shardling', type: 'ranged', sprite: ['/\\','/  \\','/____\\'], walkSprite: ['/\\','/ >\\','/____\\'], attackSprite: ['/\\*','/  \\','/____\\'], projectileChar: '*', color: '#adf', hp: 22, attack: 11, defense: 2, speed: 0.9 }
+      { name: 'Crystal Spider', type: 'melee', sprite: ['/✦o✦\\','\\ | /','/ | \\'], walkSprite: ['/✦o✦\\','\\>| /','/ |< '], attackSprite: ['/✦o✦\\','-\\|/-','/ | \\'], color: '#aaf', hp: 30, attack: 9, defense: 3, speed: 1.1 },
+      { name: 'Shardling', type: 'ranged', sprite: ['◆\\','/  \\','/____\\'], walkSprite: ['◆\\','/ >\\','/____\\'], attackSprite: ['◆\\*','/  \\','/____\\'], projectileChar: '✦', color: '#adf', hp: 22, attack: 11, defense: 2, speed: 0.9 }
     ],
-    boss: { name: 'Prism Wyrm', type: 'ranged', sprite: ['  /\\_____','<( O     >--','  \\/_____'], walkSprite: ['  /\\_____','<( O    >-- ','  \\/_____'], attackSprite: ['  /\\_____','<( O  ===>>','  \\/_____'], projectileChar: '>', color: '#daf', hp: 160, attack: 14, defense: 5, speed: 0.8 },
+    boss: { name: 'Prism Wyrm', type: 'ranged', sprite: ['  /✦_____','<( O     >--','  \\◇_____'], walkSprite: ['  /✦_____','<( O    >-- ','  \\◇_____'], attackSprite: ['  /✦_____','<( O  ===>>','  \\◇_____'], projectileChar: '✦', color: '#daf', hp: 160, attack: 14, defense: 5, speed: 0.8 },
     landscape: { mountains: '/\\/\\/\\/\\', ground: '***<>***<>***' }
   },
   {
@@ -209,10 +209,10 @@ const AREAS = [
     bgColor: '#112',
     groundChar: '~',
     enemies: [
-      { name: 'Shadow Wolf', type: 'melee', sprite: ['/\\_','( OO)','(    )>'], walkSprite: ['/\\_','( OO)','(   )> '], attackSprite: ['/\\_','(>OO)>','(    )>'], color: '#668', hp: 35, attack: 12, defense: 4, speed: 1.3 },
-      { name: 'Wraith', type: 'ranged', sprite: [' {O} ','//|\\\\','  ~  '], walkSprite: [' {O} ','//|\\\\','  ~~ '], attackSprite: [' {O} ','//|\\\\>~','  ~  '], projectileChar: '~', color: '#549', hp: 28, attack: 14, defense: 2, speed: 1.0 }
+      { name: 'Shadow Wolf', type: 'melee', sprite: ['/░\\_','( OO)','(░   )>'], walkSprite: ['/░\\_','( OO)','(░  )> '], attackSprite: ['/░\\_','(>OO)>','(░   )>'], color: '#668', hp: 35, attack: 12, defense: 4, speed: 1.3 },
+      { name: 'Wraith', type: 'ranged', sprite: [' {O} ','▒/|\\▒','  ~  '], walkSprite: [' {O} ','▒/|\\▒','  ~~ '], attackSprite: [' {O} ','▒/|\\▒>~','  ~  '], projectileChar: '~', color: '#549', hp: 28, attack: 14, defense: 2, speed: 1.0 }
     ],
-    boss: { name: 'Elder Treant', type: 'melee', sprite: ['  @@@@  ',' @@@@@@','  ||||  ',' /||||\\','// || \\\\'], walkSprite: ['  @@@@  ',' @@@@@@','  ||||  ',' /||||\\','//  || \\\\'], attackSprite: ['  @@@@  ',' @@@@@@','--||||  ',' /||||\\','// || \\\\'], color: '#5a4', hp: 200, attack: 16, defense: 8, speed: 0.4 },
+    boss: { name: 'Elder Treant', type: 'melee', sprite: ['  @@@@  ',' @@▓@@@','  ||||  ',' /||||\\','//░||░\\\\'], walkSprite: ['  @@@@  ',' @@▓@@@','  ||||  ',' /||||\\','//░ ||░\\\\'], attackSprite: ['  @@@@  ',' @@▓@@@','--||||  ',' /||||\\','//░||░\\\\'], color: '#5a4', hp: 200, attack: 16, defense: 8, speed: 0.4 },
     landscape: { mountains: '/\\_/\\_/\\', ground: '~~~|||~~~|||~~~' }
   },
   {
@@ -221,11 +221,11 @@ const AREAS = [
     bgColor: '#321',
     groundChar: '^',
     enemies: [
-      { name: 'Fire Imp', type: 'ranged', sprite: [' * ','<o>','/ \\'], walkSprite: [' * ','<o>','/ >'], attackSprite: [' * ','<o>>*','/ \\'], projectileChar: '*', color: '#f85', hp: 38, attack: 15, defense: 4, speed: 1.2 },
-      { name: 'Lava Brute', type: 'melee', sprite: ['[ooo]','|OOO|',' |_| '], walkSprite: ['[ooo]','|OOO|',' |_|>'], attackSprite: ['[ooo]','-|OOO|',' |_| '], color: '#f63', hp: 50, attack: 18, defense: 7, speed: 0.6 },
-      { name: 'Ash Wraith', type: 'ranged', sprite: [' {X} ','//|\\\\','  ^  '], walkSprite: [' {X} ','//|\\\\','  ^^ '], attackSprite: [' {X} ','//|\\\\>^','  ^  '], projectileChar: '^', color: '#a65', hp: 32, attack: 16, defense: 3, speed: 1.1 }
+      { name: 'Fire Imp', type: 'ranged', sprite: [' ▲ ','<o>','/ \\'], walkSprite: [' ▲ ','<o>','/ >'], attackSprite: [' ▲ ','<o>>*','/ \\'], projectileChar: '☆', color: '#f85', hp: 38, attack: 15, defense: 4, speed: 1.2 },
+      { name: 'Lava Brute', type: 'melee', sprite: ['[ooo]','|O△O|',' |_| '], walkSprite: ['[ooo]','|O△O|',' |_|>'], attackSprite: ['[ooo]','-|O△O|',' |_| '], color: '#f63', hp: 50, attack: 18, defense: 7, speed: 0.6 },
+      { name: 'Ash Wraith', type: 'ranged', sprite: [' {X} ','▒/|\\▒','  ^  '], walkSprite: [' {X} ','▒/|\\▒','  ^^ '], attackSprite: [' {X} ','▒/|\\▒>^','  ^  '], projectileChar: '^', color: '#a65', hp: 32, attack: 16, defense: 3, speed: 1.1 }
     ],
-    boss: { name: 'Ember Lord', type: 'ranged', sprite: ['  \\|/  ','--[O]--','  /M\\  ',' / | \\ ','_/ | \\_'], walkSprite: ['  \\|/  ','--[O]--','  /M\\  ',' / | \\ ','_/  | \\_'], attackSprite: ['  \\|/  ','--[O]-->>','  /M\\  ',' / | \\ ','_/ | \\_'], projectileChar: '>', color: '#fa3', hp: 280, attack: 22, defense: 10, speed: 0.6 },
+    boss: { name: 'Ember Lord', type: 'ranged', sprite: ['  \\▲/  ','--[O]--','  /M\\  ',' / | \\ ','_/ △ \\_'], walkSprite: ['  \\▲/  ','--[O]--','  /M\\  ',' / | \\ ','_/  △ \\_'], attackSprite: ['  \\▲/  ','--[O]-->>','  /M\\  ',' / | \\ ','_/ △ \\_'], projectileChar: '☆', color: '#fa3', hp: 280, attack: 22, defense: 10, speed: 0.6 },
     landscape: { mountains: '^/\\/^/\\/^', ground: '^^^vvv^^^vvv^^^' }
   }
 ];
@@ -372,19 +372,19 @@ const RANGED_RANGE = 25;
 // CAMP SCENE
 // ============================================================
 let campMenuIndex = 0;
-const CAMP_MENU = ['[A] Adventure', '[S] Shop', '[I] Inventory'];
+const CAMP_MENU = ['[C] Adventure', '[F] Shop', '[E] Inventory'];
 
 function updateCamp() {
-  if (wasPressed('a') || wasPressed('A')) {
+  if (wasPressed('c') || wasPressed('C')) {
     STATE.scene = 'areaSelect';
     return;
   }
-  if (wasPressed('s') || wasPressed('S')) {
+  if (wasPressed('f') || wasPressed('F')) {
     initShop();
     STATE.scene = 'shop';
     return;
   }
-  if (wasPressed('i') || wasPressed('I')) {
+  if (wasPressed('e') || wasPressed('E')) {
     invCursor = 0;
     STATE.scene = 'inventory';
     return;
@@ -454,9 +454,9 @@ function drawCamp() {
 
   // Right panel: CAMP MENU (col 71, row 4, 28w, 20h)
   drawBox(71, 4, 28, 20, ' CAMP MENU ', '#8cf');
-  drawStr(73, 7, '[A] Adventure', '#ddd');
-  drawStr(73, 9, '[S] Shop', '#ddd');
-  drawStr(73, 11, '[I] Inventory', '#ddd');
+  drawStr(73, 7, '[C] Adventure', '#ddd');
+  drawStr(73, 9, '[F] Shop', '#ddd');
+  drawStr(73, 11, '[E] Inventory', '#ddd');
   drawBoxDivider(71, 13, 28, '#446');
   drawStr(73, 15, `Areas: ${STATE.unlockedAreas}/5`, '#888');
   drawStr(73, 17, 'Venture forth and', '#555');
@@ -620,6 +620,8 @@ function spawnWave() {
     advState.bossIntroTimer = 60;
   } else {
     const count = 2 + Math.floor(Math.random() * 2);
+    const staggerCols = [75, 83, 91, 79];
+    const staggerRows = [0, -2, 1, -1];
     for (let i = 0; i < count; i++) {
       const template = area.enemies[Math.floor(Math.random() * area.enemies.length)];
       const targetRange = template.type === 'ranged' ? RANGED_RANGE : MELEE_RANGE;
@@ -628,8 +630,8 @@ function spawnWave() {
         sprite: template.sprite,
         currentHp: template.hp,
         maxHp: template.hp,
-        col: 75 + i * 10,
-        row: advState.heroRow + (3 - template.sprite.length),
+        col: staggerCols[i] || (75 + i * 8),
+        row: advState.heroRow + (3 - template.sprite.length) + (staggerRows[i] || 0),
         attackTimer: 0,
         attackAnim: 0,
         hitFlash: 0,
@@ -728,23 +730,49 @@ function updateAdventure() {
       if (isCrit) dmg *= 2;
       target.currentHp -= dmg;
       target.hitFlash = 9;
-      // Slash particles
-      for (let i = 0; i < 3; i++) {
-        addParticle(advState.heroCol + 3 + i, advState.heroRow,
-          '-', '#fff', 0.8, (Math.random()-0.5)*0.2, 8);
+      // Slash sweep particles (arc toward target)
+      const slashChars = ['/', '|', '\\'];
+      for (let i = 0; i < 4; i++) {
+        const ch = slashChars[i % slashChars.length];
+        addParticle(advState.heroCol + 3 + i * 1.5, advState.heroRow - 1 + i * 0.5,
+          ch, '#fff', 1.0, (i - 1.5) * 0.15, 10);
       }
-      addFloatingText(target.col, target.row - 1, String(dmg), isCrit ? '#ff0' : '#fff');
+      // Crit burst
+      if (isCrit) {
+        addFloatingText(target.col, target.row - 1, 'CRIT! ' + String(dmg), '#ff0');
+        // Star burst around target
+        const burstChars = ['*', '\u2605', '*', '\u2605'];
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2;
+          addParticle(target.col + 2, target.row + 1,
+            burstChars[i % burstChars.length], '#ff0',
+            Math.cos(angle) * 0.5, Math.sin(angle) * 0.3, 14);
+        }
+      } else {
+        addFloatingText(target.col, target.row - 1, String(dmg), '#fff');
+      }
       if (target.currentHp <= 0) {
         target.alive = false;
         target.deathAnim = 30;
-        // Death particles
+        // Dramatic death explosion
         for (const line of target.sprite) {
           for (const ch of line) {
             if (ch !== ' ') {
-              addParticle(target.col + Math.random()*5, target.row + Math.random()*3,
-                ch, target.color, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.3, 30);
+              addParticle(target.col + Math.random()*6, target.row + Math.random()*4,
+                ch, target.color, (Math.random()-0.5)*0.7, (Math.random()-0.5)*0.5, 35);
             }
           }
+        }
+        // Extra burst particles
+        for (let i = 0; i < 6; i++) {
+          const angle = (i / 6) * Math.PI * 2;
+          addParticle(target.col + 2, target.row + 1,
+            '*', '#fff', Math.cos(angle) * 0.6, Math.sin(angle) * 0.4, 20);
+        }
+        // Lingering smoke particles
+        for (let i = 0; i < 4; i++) {
+          addParticle(target.col + Math.random()*5, target.row + Math.random()*3,
+            '\u2591', '#555', (Math.random()-0.5)*0.05, -0.03, 40);
         }
         // Drops
         const goldDrop = 3 + Math.floor(Math.random() * 5) + STATE.currentArea * 2;
@@ -799,8 +827,14 @@ function updateAdventure() {
         const pSpeed = -1.5;
         addParticle(e.col, e.row + 1, pChar, e.color, pSpeed, 0, Math.ceil(pDist / 1.5));
         addParticle(e.col - 1, e.row + 1, pChar, e.color, pSpeed, 0, Math.ceil(pDist / 1.5));
+        // Trailing particle (dimmer, shorter life)
+        addParticle(e.col + 1, e.row + 1, '.', '#666', pSpeed * 0.7, 0, Math.ceil(pDist / 2.5));
       } else {
-        addParticle(advState.heroCol + 1, advState.heroRow + 1, '*', '#f55', -0.2, 0, 8);
+        // Melee impact symbols
+        const impactChars = ['\u2573', '\u203B', '*'];
+        const ic = impactChars[Math.floor(Math.random() * impactChars.length)];
+        addParticle(advState.heroCol + 1, advState.heroRow + 1, ic, '#f55', -0.2, 0, 10);
+        addParticle(advState.heroCol + 2, advState.heroRow, '*', '#f88', -0.15, -0.1, 8);
       }
 
       if (STATE.heroHp <= 0) {
@@ -824,6 +858,42 @@ function updateAdventure() {
   }
 }
 
+function drawEnemyAura(enemy, areaIdx, frame, enemyIndex) {
+  if (!enemy.alive) return;
+  const rate = enemy.isBoss ? 4 : 8;
+  if (frame % rate !== 0) return;
+  const spread = enemy.isBoss ? 4 : 2;
+  const cx = enemy.col + 2;
+  const cy = enemy.row + 1;
+  const rx = (Math.random() - 0.5) * (spread * 2 + enemy.sprite[0].length);
+  const ry = (Math.random() - 0.5) * (spread + enemy.sprite.length);
+  if (areaIdx === 0) {
+    // Bone: faint dust drifting down
+    const ch = Math.random() < 0.5 ? '\u00B7' : '\u00B0';
+    addParticle(cx + rx, cy + ry, ch, '#776', (Math.random()-0.5)*0.05, 0.08, 18);
+  } else if (areaIdx === 1) {
+    // Iron: metallic sparks
+    const ch = Math.random() < 0.5 ? '*' : '+';
+    addParticle(cx + rx, cy + ry, ch, '#8ab', (Math.random()-0.5)*0.15, (Math.random()-0.5)*0.15, 12);
+  } else if (areaIdx === 2) {
+    // Crystal: shimmering glints
+    const chars = ['\u2726', '\u25C6', '*'];
+    const ch = chars[Math.floor(Math.random() * chars.length)];
+    const colors = ['#aaf', '#daf', '#88d'];
+    addParticle(cx + rx, cy + ry, ch, colors[Math.floor(Math.random() * colors.length)], (Math.random()-0.5)*0.1, -0.06, 20);
+  } else if (areaIdx === 3) {
+    // Shadow: wispy trails
+    const ch = Math.random() < 0.5 ? '~' : '\u2591';
+    addParticle(cx + rx, cy + ry, ch, '#549', (Math.random()-0.5)*0.1, -0.04, 22);
+  } else if (areaIdx === 4) {
+    // Ember: rising embers
+    const chars = ['^', '*', '\u00B7'];
+    const ch = chars[Math.floor(Math.random() * chars.length)];
+    const colors = ['#f85', '#f63', '#fa4'];
+    addParticle(cx + rx, cy + ry, ch, colors[Math.floor(Math.random() * colors.length)], (Math.random()-0.5)*0.08, -0.12, 16);
+  }
+}
+
 function drawAdventure() {
   const area = AREAS[STATE.currentArea];
 
@@ -841,7 +911,8 @@ function drawAdventure() {
   drawSprite(heroSprite, advState.heroCol, advState.heroRow, heroColor);
 
   // Enemies
-  for (const e of advState.enemies) {
+  for (let ei = 0; ei < advState.enemies.length; ei++) {
+    const e = advState.enemies[ei];
     if (!e.alive) continue;
     let eColor = e.color;
     if (e.hitFlash > 0 && e.hitFlash % 2 === 0) eColor = '#f33';
@@ -849,21 +920,34 @@ function drawAdventure() {
     let eSprite = e.sprite;
     const distToHero = e.col - advState.heroCol;
     const isMoving = distToHero > e.targetRange + 1;
+    let isIdle = false;
     if (e.attackAnim > 0) {
       eSprite = e.attackSprite || e.sprite;
       eColor = '#fff';
     } else if (isMoving || advState.phase === 'walking') {
-      // Walk animation: alternate between idle and walk sprite
       const cycle = e.walkCycle || 0;
       eSprite = (cycle % 20 < 10) ? (e.walkSprite || e.sprite) : e.sprite;
+    } else {
+      isIdle = true;
+      // Breathing: alternate a character every ~40 frames
+      if (Math.floor((advState.frame + ei * 17) / 40) % 2 === 1) {
+        eSprite = e.walkSprite || e.sprite;
+      }
     }
-    drawSprite(eSprite, Math.round(e.col), e.row, eColor);
+    // Idle bobbing offset
+    const bobOffset = isIdle ? Math.sin(advState.frame * 0.06 + ei) * 0.5 : 0;
+    const drawRow = Math.round(e.row + bobOffset);
+    // Hit reaction: knockback shift
+    const knockCol = (e.hitFlash > 6) ? 1 : 0;
+    drawSprite(eSprite, Math.round(e.col) + knockCol, drawRow, eColor);
+    // Elemental aura particles
+    drawEnemyAura(e, STATE.currentArea, advState.frame, ei);
     // Enemy HP bar
     if (!e.isBoss) {
       const barW = 8;
       const filled = Math.max(0, Math.round(barW * e.currentHp / e.maxHp));
-      drawStr(Math.round(e.col) - 1, e.row - 2, e.name, '#888');
-      drawStr(Math.round(e.col) - 1, e.row - 1, '[' + '#'.repeat(filled) + '-'.repeat(barW - filled) + ']', '#a55');
+      drawStr(Math.round(e.col) - 1, drawRow - 2, e.name, '#888');
+      drawStr(Math.round(e.col) - 1, drawRow - 1, '[' + '#'.repeat(filled) + '-'.repeat(barW - filled) + ']', '#a55');
     }
   }
 
@@ -895,12 +979,14 @@ function drawAdventure() {
     }
   }
 
-  // Boss intro text
+  // Boss intro text with ornate border
   if (advState.phase === 'bossIntro') {
     const boss = advState.enemies[0];
     drawBox(30, 12, 40, 7, null, '#f55');
+    drawStr(32, 13, '\u2554' + '\u2550'.repeat(36) + '\u2557', '#f88');
     drawStr(42, 14, '! BOSS !', '#f55');
     drawStr(50 - Math.floor(boss.name.length/2), 16, boss.name, boss.color);
+    drawStr(32, 17, '\u255A' + '\u2550'.repeat(36) + '\u255D', '#f88');
   }
 
   // Victory screen
