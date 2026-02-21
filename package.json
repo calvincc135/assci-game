@@ -1,0 +1,12 @@
+{
+  "name": "stone-story-autobattler",
+  "version": "1.0.0",
+  "description": "Stone Story RPG-style auto-battler",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}

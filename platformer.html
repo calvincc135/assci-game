@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stone Story Platformer</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+  canvas { border: 1px solid #333; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const GRAVITY = 0.5;
+const FRICTION = 0.8;
+
+const player = {
+  x: 50, y: 300, w: 30, h: 40,
+  vx: 0, vy: 0,
+  onGround: false,
+  color: '#4fc3f7'
+};
+
+const platforms = [
+  { x: 0, y: 460, w: 800, h: 40, color: '#4caf50' },
+  { x: 150, y: 370, w: 120, h: 15, color: '#8d6e63' },
+  { x: 350, y: 310, w: 120, h: 15, color: '#8d6e63' },
+  { x: 550, y: 250, w: 120, h: 15, color: '#8d6e63' },
+  { x: 200, y: 190, w: 120, h: 15, color: '#8d6e63' },
+  { x: 450, y: 140, w: 120, h: 15, color: '#8d6e63' },
+  { x: 650, y: 380, w: 100, h: 15, color: '#8d6e63' },
+  { x: 50,  y: 280, w: 80,  h: 15, color: '#8d6e63' },
+  { x: 700, y: 170, w: 100, h: 15, color: '#8d6e63' },
+];
+
+const coins = [
+  { x: 200, y: 340, r: 8, collected: false },
+  { x: 400, y: 280, r: 8, collected: false },
+  { x: 600, y: 220, r: 8, collected: false },
+  { x: 250, y: 160, r: 8, collected: false },
+  { x: 500, y: 110, r: 8, collected: false },
+  { x: 740, y: 140, r: 8, collected: false },
+  { x: 690, y: 350, r: 8, collected: false },
+  { x: 80,  y: 250, r: 8, collected: false },
+];
+
+let score = 0;
+
+function rectCollision(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function circleRectCollision(cx, cy, cr, rx, ry, rw, rh) {
+  const closestX = Math.max(rx, Math.min(cx, rx + rw));
+  const closestY = Math.max(ry, Math.min(cy, ry + rh));
+  const dx = cx - closestX;
+  const dy = cy - closestY;
+  return dx * dx + dy * dy < cr * cr;
+}
+
+function update() {
+  if (keys['a']) player.vx -= 0.6;
+  if (keys['d']) player.vx += 0.6;
+
+  if ((keys['w'] || keys[' ']) && player.onGround) {
+    player.vy = -11;
+    player.onGround = false;
+  }
+
+  player.vx *= FRICTION;
+  player.vy += GRAVITY;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  player.onGround = false;
+  for (const p of platforms) {
+    if (rectCollision(player, p)) {
+      if (player.vy > 0 && player.y + player.h - player.vy <= p.y + 2) {
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      }
+      else if (player.vy < 0 && player.y - player.vy >= p.y + p.h - 2) {
+        player.y = p.y + p.h;
+        player.vy = 0;
+      }
+      else if (player.vx > 0) {
+        player.x = p.x - player.w;
+        player.vx = 0;
+      } else if (player.vx < 0) {
+        player.x = p.x + p.w;
+        player.vx = 0;
+      }
+    }
+  }
+
+  for (const c of coins) {
+    if (!c.collected && circleRectCollision(c.x, c.y, c.r, player.x, player.y, player.w, player.h)) {
+      c.collected = true;
+      score++;
+    }
+  }
+
+  if (player.x < 0) { player.x = 0; player.vx = 0; }
+  if (player.x + player.w > canvas.width) { player.x = canvas.width - player.w; player.vx = 0; }
+  if (player.y > canvas.height + 50) {
+    player.x = 50; player.y = 300; player.vx = 0; player.vy = 0;
+  }
+}
+
+// ── Rendering Engine ──────────────────────────────────────────
+
+const CHAR_W = 8;
+const CHAR_H = 14;
+const COLS = Math.floor(canvas.width / CHAR_W);   // 100
+const ROWS = Math.floor(canvas.height / CHAR_H);  // 35
+
+// ColorGrid: each cell = { ch, color }
+function createGrid() {
+  const g = [];
+  for (let r = 0; r < ROWS; r++) {
+    g[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      g[r][c] = { ch: ' ', color: '#fff' };
+    }
+  }
+  return g;
+}
+
+function plotCell(grid, col, row, ch, color) {
+  if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+    grid[row][col] = { ch, color };
+  }
+}
+
+function plotAtPixel(grid, px, py, ch, color) {
+  plotCell(grid, Math.floor(px / CHAR_W), Math.floor(py / CHAR_H), ch, color);
+}
+
+// ── Frame counter ─────────────────────────────────────────────
+let frameTick = 0;
+
+// ── Atmospheric particles ─────────────────────────────────────
+const particles = [];
+for (let i = 0; i < 40; i++) {
+  particles.push({
+    x: Math.random() * COLS,
+    y: Math.random() * ROWS,
+    ch: ['.', "'", ',', '`', ':'][Math.floor(Math.random() * 5)],
+    speed: 0.01 + Math.random() * 0.03,
+    drift: (Math.random() - 0.5) * 0.02
+  });
+}
+
+// ── Mountain silhouettes ──────────────────────────────────────
+// Pre-generate two mountain layers with different heights
+function generateMountain(seed, baseHeight, amplitude, freq) {
+  const heights = [];
+  for (let c = 0; c < COLS + 20; c++) {
+    let h = baseHeight;
+    h += Math.sin(c * freq) * amplitude;
+    h += Math.sin(c * freq * 2.3 + seed) * (amplitude * 0.5);
+    h += Math.sin(c * freq * 0.7 + seed * 2) * (amplitude * 0.3);
+    heights.push(Math.floor(h));
+  }
+  return heights;
+}
+
+const mountainFar  = generateMountain(42, 12, 4, 0.06);
+const mountainNear = generateMountain(17, 16, 5, 0.08);
+
+// ── Dead trees (background decoration) ────────────────────────
+const bgTrees = [
+  { col: 15, row: 0 },   // row offset from ground
+  { col: 38, row: 0 },
+  { col: 62, row: 0 },
+  { col: 85, row: 0 },
+  { col: 7, row: 0 },
+  { col: 50, row: 0 },
+  { col: 75, row: 0 },
+];
+
+// Tree shape (drawn upward from base)
+const treeSprite = [
+  '   \\ /   ',
+  '    Y    ',
+  '   /|\\   ',
+  '    |    ',
+  '    |    ',
+  '   .|.   ',
+];
+
+// ── Player animation frames ──────────────────────────────────
+// Each frame is [row0, row1, row2, row3, row4] — 5 rows, up to 5 cols
+// Facing RIGHT
+
+const playerIdle = [
+  ' (O) ',
+  '  |/ ',
+  ' /|\\ ',
+  '  |  ',
+  ' / \\ ',
+];
+
+const playerWalk = [
+  [ // frame 0
+    ' (O) ',
+    '  |/ ',
+    ' /|  ',
+    '  |  ',
+    '  |\\ ',
+  ],
+  [ // frame 1
+    ' (O) ',
+    '  |/ ',
+    ' /|\\ ',
+    '  |  ',
+    ' / \\ ',
+  ],
+  [ // frame 2
+    ' (O) ',
+    '  |/ ',
+    '  |\\ ',
+    '  |  ',
+    ' /|  ',
+  ],
+  [ // frame 3
+    ' (O) ',
+    '  |/ ',
+    ' /|\\ ',
+    '  |  ',
+    ' \\ / ',
+  ],
+];
+
+const playerJump = [
+  ' \\O/ ',
+  '  |/ ',
+  '  |  ',
+  '  |  ',
+  ' ^ ^ ',
+];
+
+// ── Runestone frames ──────────────────────────────────────────
+const runeFrames = [
+  ['.','{*}','.'],
+  [' ','<O>',' '],
+  ['.','{+}','.'],
+];
+
+// ── Draw background mountains ─────────────────────────────────
+function drawMountains(grid, heights, color, parallaxOffset) {
+  const groundRow = Math.floor(460 / CHAR_H);  // ground platform y
+  for (let c = 0; c < COLS; c++) {
+    const srcCol = ((c + parallaxOffset) % (COLS + 20) + (COLS + 20)) % (COLS + 20);
+    const peakRow = groundRow - heights[srcCol];
+    if (peakRow < 0) continue;
+    // Draw the peak character
+    if (peakRow >= 0 && peakRow < ROWS) {
+      const prev = srcCol > 0 ? heights[srcCol - 1] : heights[srcCol];
+      const next = srcCol < COLS + 19 ? heights[srcCol + 1] : heights[srcCol];
+      const h = heights[srcCol];
+      let ch = '.';
+      if (h > prev && h > next) ch = '^';
+      else if (h > prev) ch = '/';
+      else if (h > next) ch = '\\';
+      else ch = '.';
+      plotCell(grid, c, peakRow, ch, color);
+    }
+    // Fill below peak to just above ground with dithered fill
+    const fillChars = [':', '.', ';', '.'];
+    for (let r = peakRow + 1; r < groundRow; r++) {
+      if (r >= 0 && r < ROWS) {
+        const fc = fillChars[(r + c) % fillChars.length];
+        // Only draw if cell is still empty
+        if (grid[r][c].ch === ' ') {
+          plotCell(grid, c, r, fc, color);
+        }
+      }
+    }
+  }
+}
+
+// ── Draw dead trees ───────────────────────────────────────────
+function drawTrees(grid, color) {
+  const groundRow = Math.floor(460 / CHAR_H);
+  for (const tree of bgTrees) {
+    const baseRow = groundRow - 1;
+    for (let i = 0; i < treeSprite.length; i++) {
+      const row = baseRow - (treeSprite.length - 1 - i);
+      const line = treeSprite[i];
+      const startCol = tree.col - Math.floor(line.length / 2);
+      for (let j = 0; j < line.length; j++) {
+        if (line[j] !== ' ') {
+          const c = startCol + j;
+          if (c >= 0 && c < COLS && row >= 0 && row < ROWS) {
+            if (grid[row][c].ch === ' ' || grid[row][c].ch === '.' || grid[row][c].ch === ':') {
+              plotCell(grid, c, row, line[j], color);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ── Draw atmospheric particles ────────────────────────────────
+function drawParticles(grid) {
+  const colors = ['#333', '#3a3a3a', '#444', '#383838', '#4a4a4a'];
+  for (const p of particles) {
+    p.x += p.drift;
+    p.y -= p.speed;
+    if (p.y < 0) { p.y = ROWS - 1; p.x = Math.random() * COLS; }
+    if (p.x < 0) p.x = COLS - 1;
+    if (p.x >= COLS) p.x = 0;
+    const col = Math.floor(p.x);
+    const row = Math.floor(p.y);
+    if (row >= 0 && row < ROWS && col >= 0 && col < COLS && grid[row][col].ch === ' ') {
+      plotCell(grid, col, row, p.ch, colors[Math.floor(Math.random() * colors.length)]);
+    }
+  }
+}
+
+// ── Draw stars/embers in sky ──────────────────────────────────
+function drawStars(grid) {
+  // Deterministic stars based on position, but twinkle based on frameTick
+  const starPositions = [
+    [3, 5], [8, 12], [2, 28], [6, 45], [1, 60], [4, 78], [7, 90],
+    [5, 20], [3, 35], [1, 50], [6, 70], [2, 85], [4, 10], [7, 55],
+    [1, 30], [5, 65], [3, 80], [6, 95], [2, 40], [4, 15],
+  ];
+  for (let i = 0; i < starPositions.length; i++) {
+    const [r, c] = starPositions[i];
+    if (r < ROWS && c < COLS && grid[r][c].ch === ' ') {
+      // Twinkle: some stars dim/brighten
+      const twinkle = Math.sin(frameTick * 0.05 + i * 1.7);
+      if (twinkle > -0.3) {
+        const bright = twinkle > 0.5;
+        plotCell(grid, c, r, bright ? '*' : '.', bright ? '#666' : '#444');
+      }
+    }
+  }
+}
+
+// ── Draw ground with stone texture ────────────────────────────
+function drawGround(grid) {
+  const p = platforms[0]; // ground platform
+  const c0 = Math.max(0, Math.floor(p.x / CHAR_W));
+  const c1 = Math.min(COLS - 1, Math.floor((p.x + p.w - 1) / CHAR_W));
+  const r0 = Math.max(0, Math.floor(p.y / CHAR_H));
+  const r1 = Math.min(ROWS - 1, Math.floor((p.y + p.h - 1) / CHAR_H));
+
+  // Surface/moss row
+  const mossChars = ['"', 'w', '"', 'v', '"', 'w', '.', '"', 'v', '"'];
+  for (let c = c0; c <= c1; c++) {
+    plotCell(grid, c, r0, mossChars[c % mossChars.length], '#7a7a6a');
+  }
+
+  // Stone fill below
+  const rockChars = ['#', '%', '&', '#', '@', '#', '%', '#'];
+  const texChars  = [':', '.', ';', ':', '.', ','];
+  for (let r = r0 + 1; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const useTexture = ((r + c) % 5 === 0);
+      if (useTexture) {
+        plotCell(grid, c, r, texChars[(r * 7 + c) % texChars.length], '#666');
+      } else {
+        plotCell(grid, c, r, rockChars[(r * 3 + c * 7) % rockChars.length], '#999');
+      }
+    }
+  }
+}
+
+// ── Draw floating platforms as stone slabs ────────────────────
+function drawPlatforms(grid) {
+  for (let i = 1; i < platforms.length; i++) {
+    const p = platforms[i];
+    const c0 = Math.max(0, Math.floor(p.x / CHAR_W));
+    const c1 = Math.min(COLS - 1, Math.floor((p.x + p.w - 1) / CHAR_W));
+    const r0 = Math.max(0, Math.floor(p.y / CHAR_H));
+    const r1 = Math.min(ROWS - 1, Math.floor((p.y + p.h - 1) / CHAR_H));
+
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        let ch, color;
+        if (c === c0) {
+          ch = '['; color = '#ccc';
+        } else if (c === c1) {
+          ch = ']'; color = '#ccc';
+        } else if (r === r0) {
+          // Top surface: textured stone
+          const topChars = ['=', '=', '~', '=', '-', '='];
+          ch = topChars[(c) % topChars.length];
+          color = '#bbb';
+        } else {
+          // Fill
+          const fillChars = [':', '.', ':', ';', '.'];
+          ch = fillChars[(r + c) % fillChars.length];
+          color = '#777';
+        }
+        plotCell(grid, c, r, ch, color);
+      }
+    }
+
+    // Add moss/debris on top
+    if (r0 > 0) {
+      const debrisChars = ['.', ',', '.', ' ', '.', ','];
+      for (let c = c0; c <= c1; c++) {
+        const dc = debrisChars[(c + i) % debrisChars.length];
+        if (dc !== ' ' && grid[r0 - 1][c] && grid[r0 - 1][c].ch === ' ') {
+          plotCell(grid, c, r0 - 1, dc, '#555');
+        }
+      }
+    }
+  }
+}
+
+// ── Draw player character ─────────────────────────────────────
+let playerFacing = 1; // 1 = right, -1 = left
+let walkFrame = 0;
+let walkTimer = 0;
+
+function drawPlayer(grid) {
+  const isMoving = Math.abs(player.vx) > 0.5;
+  const isJumping = !player.onGround;
+
+  // Update facing direction
+  if (player.vx > 0.3) playerFacing = 1;
+  else if (player.vx < -0.3) playerFacing = -1;
+
+  // Update walk animation
+  if (isMoving && !isJumping) {
+    walkTimer++;
+    if (walkTimer >= 6) {
+      walkTimer = 0;
+      walkFrame = (walkFrame + 1) % 4;
+    }
+  } else {
+    walkTimer = 0;
+    if (!isMoving) walkFrame = 0;
+  }
+
+  // Select sprite
+  let sprite;
+  if (isJumping) {
+    sprite = playerJump;
+  } else if (isMoving) {
+    sprite = playerWalk[walkFrame];
+  } else {
+    sprite = playerIdle;
+  }
+
+  // Calculate grid position — center the 5-wide sprite on the player's 30px width
+  const playerCenterX = player.x + player.w / 2;
+  const playerBottomY = player.y + player.h;
+  const spriteRows = sprite.length;
+  const spriteCols = sprite[0].length;
+  const startCol = Math.floor(playerCenterX / CHAR_W) - Math.floor(spriteCols / 2);
+  const startRow = Math.floor(playerBottomY / CHAR_H) - spriteRows;
+
+  for (let r = 0; r < spriteRows; r++) {
+    const line = sprite[r];
+    for (let j = 0; j < line.length; j++) {
+      const ch = line[j];
+      if (ch === ' ') continue;
+      let col;
+      if (playerFacing === -1) {
+        // Mirror horizontally
+        col = startCol + (spriteCols - 1 - j);
+      } else {
+        col = startCol + j;
+      }
+      const row = startRow + r;
+      // Mirror characters when facing left
+      let drawCh = ch;
+      if (playerFacing === -1) {
+        if (ch === '/') drawCh = '\\';
+        else if (ch === '\\') drawCh = '/';
+        else if (ch === '(') drawCh = ')';
+        else if (ch === ')') drawCh = '(';
+        else if (ch === '<') drawCh = '>';
+        else if (ch === '>') drawCh = '<';
+      }
+      plotCell(grid, col, row, drawCh, '#fff');
+    }
+  }
+}
+
+// ── Draw runestones (coins) ───────────────────────────────────
+function drawRunestones(grid) {
+  const runePhase = Math.floor(frameTick / 15) % 3;
+  const bob = Math.sin(frameTick * 0.08);
+
+  for (const c of coins) {
+    if (c.collected) continue;
+
+    const centerCol = Math.floor(c.x / CHAR_W);
+    const centerRow = Math.floor(c.y / CHAR_H) + Math.round(bob * 0.3);
+
+    // Draw the runestone glyph
+    const frame = runeFrames[runePhase];
+    const mainGlyph = frame[1]; // center text like '{*}'
+    const leftDot = frame[0];
+    const rightDot = frame[2];
+
+    // Draw main glyph centered
+    const glyphStart = centerCol - Math.floor(mainGlyph.length / 2);
+    for (let j = 0; j < mainGlyph.length; j++) {
+      if (mainGlyph[j] !== ' ') {
+        plotCell(grid, glyphStart + j, centerRow, mainGlyph[j], '#ffd700');
+      }
+    }
+
+    // Draw glow dots
+    if (leftDot !== ' ') {
+      plotCell(grid, centerCol - 2, centerRow, leftDot, '#aa8800');
+    }
+    if (rightDot !== ' ') {
+      plotCell(grid, centerCol + 2, centerRow, rightDot, '#aa8800');
+    }
+
+    // Subtle glow above/below
+    if ((frameTick + Math.floor(c.x)) % 20 < 10) {
+      plotCell(grid, centerCol, centerRow - 1, '.', '#665500');
+      plotCell(grid, centerCol, centerRow + 1, ',', '#665500');
+    }
+  }
+}
+
+// ── Draw HUD ──────────────────────────────────────────────────
+function drawHUD() {
+  // Runic score display
+  const total = coins.length;
+  const hudText = `[ Runes: ${score} / ${total} ]`;
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = 'bold 14px monospace';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+
+  // Draw box border
+  const boxW = hudText.length * 8 + 16;
+  ctx.fillStyle = '#333';
+  ctx.fillRect(6, 4, boxW, 20);
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(6, 4, boxW, 20);
+
+  ctx.fillStyle = '#ccc';
+  ctx.fillText(hudText, 14, 7);
+
+  // Victory screen
+  if (score === total) {
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = 'center';
+
+    // Border box
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - 200, cy - 50, 400, 90);
+    ctx.fillStyle = 'rgba(0,0,0,0.9)';
+    ctx.fillRect(cx - 200, cy - 50, 400, 90);
+
+    // Victory text
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 22px monospace';
+    ctx.fillText('~ ALL RUNES COLLECTED ~', cx, cy - 25);
+
+    ctx.fillStyle = '#888';
+    ctx.font = '14px monospace';
+    ctx.fillText('The stones whisper of your triumph.', cx, cy);
+
+    ctx.fillStyle = '#666';
+    ctx.font = '13px monospace';
+    ctx.fillText('Press R to begin anew', cx, cy + 25);
+
+    ctx.textAlign = 'left';
+  }
+
+  // Controls hint
+  ctx.fillStyle = '#444';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('A/D: Move  |  W/Space: Jump  |  R: Restart', 8, canvas.height - 12);
+}
+
+// ── Main draw function ────────────────────────────────────────
+function draw() {
+  frameTick++;
+
+  // Dark background
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const grid = createGrid();
+
+  // -- Background layer (dark, atmospheric) --
+  const parallaxFar  = Math.floor(player.x / 80);
+  const parallaxNear = Math.floor(player.x / 40);
+
+  drawStars(grid);
+  drawMountains(grid, mountainFar, '#2a2a2a', parallaxFar);
+  drawTrees(grid, '#383838');
+  drawMountains(grid, mountainNear, '#3a3a3a', parallaxNear);
+  drawParticles(grid);
+
+  // -- Foreground layer (bright) --
+  drawGround(grid);
+  drawPlatforms(grid);
+  drawRunestones(grid);
+  drawPlayer(grid);
+
+  // -- Render the grid per-character with individual colors --
+  ctx.font = CHAR_H + 'px monospace';
+  ctx.textBaseline = 'top';
+
+  // Batch by color for performance
+  const colorBuckets = {};
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = grid[r][c];
+      if (cell.ch === ' ') continue;
+      if (!colorBuckets[cell.color]) colorBuckets[cell.color] = [];
+      colorBuckets[cell.color].push({ ch: cell.ch, x: c * CHAR_W, y: r * CHAR_H });
+    }
+  }
+
+  for (const color in colorBuckets) {
+    ctx.fillStyle = color;
+    for (const cell of colorBuckets[color]) {
+      ctx.fillText(cell.ch, cell.x, cell.y);
+    }
+  }
+
+  // -- HUD on top --
+  drawHUD();
+}
+
+// restart
+window.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'r' && score === coins.length) {
+    score = 0;
+    coins.forEach(c => c.collected = false);
+    player.x = 50; player.y = 300; player.vx = 0; player.vy = 0;
+  }
+});
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
