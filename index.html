@@ -47,19 +47,16 @@ function drawStr(col, row, str, color) {
 
 function drawBox(col, row, width, height, title, color) {
   const c = color || '#aaa';
-  // Top border
   let top = '\u2554' + '\u2550'.repeat(width - 2) + '\u2557';
   if (title) {
     const pad = Math.max(0, Math.floor((width - 2 - title.length) / 2));
     top = '\u2554' + '\u2550'.repeat(pad) + title + '\u2550'.repeat(width - 2 - pad - title.length) + '\u2557';
   }
   drawStr(col, row, top, c);
-  // Sides
   for (let r = 1; r < height - 1; r++) {
     drawStr(col, row + r, '\u2551', c);
     drawStr(col + width - 1, row + r, '\u2551', c);
   }
-  // Bottom border
   drawStr(col, row + height - 1, '\u255A' + '\u2550'.repeat(width - 2) + '\u255D', c);
 }
 
@@ -72,7 +69,6 @@ function renderGrid() {
   ctx.fillRect(0, 0, W, H);
   ctx.font = '14px monospace';
   ctx.textBaseline = 'top';
-  // Batch by color
   const buckets = {};
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -102,6 +98,56 @@ document.addEventListener('keyup', e => { keys[e.key] = false; });
 function wasPressed(k) { return justPressed[k] || justPressed[k.toLowerCase()] || justPressed[k.toUpperCase()]; }
 function clearInput() { for (const k in justPressed) delete justPressed[k]; }
 
+// Scroll wheel support
+let scrollDelta = 0;
+canvas.addEventListener('wheel', e => {
+  scrollDelta += e.deltaY > 0 ? 1 : -1;
+  e.preventDefault();
+}, { passive: false });
+function getScroll() { const d = scrollDelta; scrollDelta = 0; return d; }
+
+// Sort/Filter system
+const SORT_MODES = ['default', 'best', 'worst'];
+const FILTER_RARITIES = ['all', 'common', 'uncommon', 'rare', 'epic', 'legendary'];
+const FILTER_SLOTS = ['all', 'weapon', 'armor', 'accessory'];
+let filterSort = 0;
+let filterRarity = 0;
+let filterSlot = 0;
+
+function getFilteredItems(items) {
+  let filtered = [...items];
+  if (FILTER_RARITIES[filterRarity] !== 'all') {
+    filtered = filtered.filter(i => i.rarity === FILTER_RARITIES[filterRarity]);
+  }
+  if (FILTER_SLOTS[filterSlot] !== 'all') {
+    filtered = filtered.filter(i => i.slot === FILTER_SLOTS[filterSlot]);
+  }
+  if (SORT_MODES[filterSort] === 'best') {
+    filtered.sort((a, b) => (b.tier || 0) - (a.tier || 0) || (b.attack || 0) - (a.attack || 0));
+  } else if (SORT_MODES[filterSort] === 'worst') {
+    filtered.sort((a, b) => (a.tier || 0) - (b.tier || 0) || (a.attack || 0) - (b.attack || 0));
+  }
+  return filtered;
+}
+
+function handleFilterKeys(cursorReset) {
+  let changed = false;
+  if (wasPressed('s') || wasPressed('S')) { filterSort = (filterSort + 1) % SORT_MODES.length; changed = true; }
+  if (wasPressed('r') || wasPressed('R')) { filterRarity = (filterRarity + 1) % FILTER_RARITIES.length; changed = true; }
+  if (wasPressed('t') || wasPressed('T')) { filterSlot = (filterSlot + 1) % FILTER_SLOTS.length; changed = true; }
+  if (changed && cursorReset) cursorReset();
+  return changed;
+}
+
+function drawFilterBar(row) {
+  const sortLabel = SORT_MODES[filterSort].charAt(0).toUpperCase() + SORT_MODES[filterSort].slice(1);
+  const rarLabel = FILTER_RARITIES[filterRarity].charAt(0).toUpperCase() + FILTER_RARITIES[filterRarity].slice(1);
+  const slotLabel = FILTER_SLOTS[filterSlot].charAt(0).toUpperCase() + FILTER_SLOTS[filterSlot].slice(1);
+  drawStr(3, row, `[S] Sort: ${sortLabel}`, '#adf');
+  drawStr(25, row, `[R] Rarity: ${rarLabel}`, '#adf');
+  drawStr(50, row, `[T] Slot: ${slotLabel}`, '#adf');
+}
+
 // ============================================================
 // GAME STATE
 // ============================================================
@@ -109,20 +155,46 @@ const STATE = {
   scene: 'camp',
   gold: 30,
   materials: { bone: 0, iron: 0, crystal: 0, shadow: 0, ember: 0 },
-  unlockedAreas: 1, // areas 0..unlockedAreas-1 are unlocked
+  unlockedAreas: 1,
   inventory: [],
   equipped: { weapon: null, armor: null, accessory: null },
   heroBaseStats: { maxHp: 50, attack: 5, defense: 2, critChance: 0.05, attackSpeed: 1.0 },
-  // Adventure state
   currentArea: 0,
   wave: 0,
   heroHp: 50,
   heroMaxHp: 50,
-  // Transient
   loot: [],
   lootGold: 0,
-  lootMaterials: {}
+  lootMaterials: {},
+  // EXP & Leveling
+  exp: 0,
+  level: 1,
+  expToNext: 50
 };
+
+function getExpForLevel(level) {
+  return 50 + (level - 1) * 30;
+}
+
+function addExp(amount) {
+  STATE.exp += amount;
+  while (STATE.exp >= STATE.expToNext) {
+    STATE.exp -= STATE.expToNext;
+    STATE.level++;
+    STATE.expToNext = getExpForLevel(STATE.level);
+    // Boost base stats
+    STATE.heroBaseStats.maxHp += 5;
+    STATE.heroBaseStats.attack += 1;
+    STATE.heroBaseStats.defense += 1;
+    STATE.heroBaseStats.critChance += 0.005;
+    // Show level up text at hero position
+    if (advState && advState.heroCol !== undefined) {
+      addFloatingText(advState.heroCol - 2, advState.heroRow - 3, 'LEVEL UP!', '#ff0');
+    } else {
+      addFloatingText(40, 15, 'LEVEL UP!', '#ff0');
+    }
+  }
+}
 
 function getHeroStats() {
   const s = { ...STATE.heroBaseStats };
@@ -134,6 +206,14 @@ function getHeroStats() {
       s.defense += item.defense || 0;
       s.critChance += item.critChance || 0;
       s.attackSpeed += item.attackSpeed || 0;
+      // Enchantment bonuses
+      if (item.enchantment) {
+        s.attack += item.enchantment.attack || 0;
+        s.defense += item.enchantment.defense || 0;
+        s.maxHp += item.enchantment.hp || 0;
+        s.critChance += item.enchantment.critChance || 0;
+        s.attackSpeed += item.enchantment.attackSpeed || 0;
+      }
     }
   }
   return s;
@@ -145,7 +225,11 @@ function saveGame() {
     materials: STATE.materials,
     unlockedAreas: STATE.unlockedAreas,
     inventory: STATE.inventory,
-    equipped: STATE.equipped
+    equipped: STATE.equipped,
+    exp: STATE.exp,
+    level: STATE.level,
+    expToNext: STATE.expToNext,
+    heroBaseStats: STATE.heroBaseStats
   };
   localStorage.setItem('stoneStoryAutoBattler', JSON.stringify(data));
 }
@@ -160,6 +244,10 @@ function loadGame() {
     STATE.unlockedAreas = d.unlockedAreas || 1;
     STATE.inventory = d.inventory || [];
     STATE.equipped = d.equipped || { weapon: null, armor: null, accessory: null };
+    STATE.exp = d.exp || 0;
+    STATE.level = d.level || 1;
+    STATE.expToNext = d.expToNext || getExpForLevel(STATE.level);
+    if (d.heroBaseStats) STATE.heroBaseStats = d.heroBaseStats;
   } catch(e) {}
 }
 
@@ -237,23 +325,18 @@ const RARITY_COLORS = { common: '#aaa', uncommon: '#5a5', rare: '#55f', epic: '#
 const RARITIES = ['common','uncommon','rare','epic','legendary'];
 
 const EQUIPMENT_TABLE = [
-  // Area 0 - common
   { name: 'Bone Sword', slot: 'weapon', tier: 0, rarity: 'common', attack: 3, defense: 0, hp: 0, critChance: 0.02, attackSpeed: 0, cost: 15 },
   { name: 'Bone Shield', slot: 'armor', tier: 0, rarity: 'common', attack: 0, defense: 3, hp: 10, critChance: 0, attackSpeed: 0, cost: 15 },
   { name: 'Rat Tooth Charm', slot: 'accessory', tier: 0, rarity: 'common', attack: 1, defense: 0, hp: 5, critChance: 0.05, attackSpeed: 0.1, cost: 12 },
-  // Area 1 - uncommon
   { name: 'Iron Blade', slot: 'weapon', tier: 1, rarity: 'uncommon', attack: 6, defense: 0, hp: 0, critChance: 0.03, attackSpeed: 0.1, cost: 35 },
   { name: 'Iron Plate', slot: 'armor', tier: 1, rarity: 'uncommon', attack: 0, defense: 6, hp: 20, critChance: 0, attackSpeed: -0.1, cost: 35 },
   { name: 'Goblin Earring', slot: 'accessory', tier: 1, rarity: 'uncommon', attack: 2, defense: 1, hp: 10, critChance: 0.05, attackSpeed: 0.15, cost: 30 },
-  // Area 2 - rare
   { name: 'Crystal Saber', slot: 'weapon', tier: 2, rarity: 'rare', attack: 10, defense: 0, hp: 5, critChance: 0.08, attackSpeed: 0.15, cost: 60 },
   { name: 'Crystal Mail', slot: 'armor', tier: 2, rarity: 'rare', attack: 0, defense: 10, hp: 35, critChance: 0, attackSpeed: 0, cost: 60 },
   { name: 'Prism Pendant', slot: 'accessory', tier: 2, rarity: 'rare', attack: 4, defense: 2, hp: 15, critChance: 0.1, attackSpeed: 0.1, cost: 55 },
-  // Area 3 - epic
   { name: 'Shadow Fang', slot: 'weapon', tier: 3, rarity: 'epic', attack: 15, defense: 0, hp: 0, critChance: 0.12, attackSpeed: 0.2, cost: 100 },
   { name: 'Treant Bark', slot: 'armor', tier: 3, rarity: 'epic', attack: 0, defense: 14, hp: 50, critChance: 0, attackSpeed: 0, cost: 100 },
   { name: 'Wraith Ring', slot: 'accessory', tier: 3, rarity: 'epic', attack: 6, defense: 3, hp: 20, critChance: 0.1, attackSpeed: 0.2, cost: 90 },
-  // Area 4 - legendary
   { name: 'Ember Blade', slot: 'weapon', tier: 4, rarity: 'legendary', attack: 22, defense: 0, hp: 10, critChance: 0.15, attackSpeed: 0.25, cost: 180 },
   { name: 'Molten Aegis', slot: 'armor', tier: 4, rarity: 'legendary', attack: 2, defense: 20, hp: 70, critChance: 0, attackSpeed: 0, cost: 180 },
   { name: 'Ember Crown', slot: 'accessory', tier: 4, rarity: 'legendary', attack: 8, defense: 5, hp: 30, critChance: 0.12, attackSpeed: 0.2, cost: 160 }
@@ -261,7 +344,6 @@ const EQUIPMENT_TABLE = [
 
 function generateDrop(areaTier) {
   const pool = EQUIPMENT_TABLE.filter(e => e.tier <= areaTier);
-  // Weight toward current tier
   const weighted = [];
   for (const item of pool) {
     const weight = item.tier === areaTier ? 4 : 1;
@@ -269,6 +351,28 @@ function generateDrop(areaTier) {
   }
   return { ...weighted[Math.floor(Math.random() * weighted.length)] };
 }
+
+// ============================================================
+// FORGE RECIPES
+// ============================================================
+const FORGE_MATERIAL_COSTS = [
+  { material: 'bone', amount: 3, gold: 10 },
+  { material: 'iron', amount: 5, gold: 25 },
+  { material: 'crystal', amount: 5, gold: 50 },
+  { material: 'shadow', amount: 7, gold: 80 },
+  { material: 'ember', amount: 10, gold: 120 }
+];
+
+// ============================================================
+// ENCHANTMENTS
+// ============================================================
+const ENCHANTMENTS = [
+  { name: 'Bone Curse', material: 'bone', area: 0, attack: 3, defense: 0, hp: 0, critChance: 0, attackSpeed: 0, desc: '+3 ATK, lifesteal', color: '#cba' },
+  { name: 'Iron Ward', material: 'iron', area: 1, attack: 0, defense: 5, hp: 15, critChance: 0, attackSpeed: 0, desc: '+5 DEF, +15 HP', color: '#8ab' },
+  { name: 'Crystal Pierce', material: 'crystal', area: 2, attack: 2, defense: 0, hp: 0, critChance: 0.08, attackSpeed: 0, desc: '+8% CRIT, +2 ATK', color: '#aaf' },
+  { name: 'Shadow Strike', material: 'shadow', area: 3, attack: 4, defense: 0, hp: 0, critChance: 0, attackSpeed: 0.3, desc: '+0.3 SPD, +4 ATK', color: '#549' },
+  { name: 'Ember Fury', material: 'ember', area: 4, attack: 6, defense: 0, hp: 0, critChance: 0.05, attackSpeed: 0, desc: '+6 ATK, +5% CRIT', color: '#fa3' }
+];
 
 // ============================================================
 // PARTICLES & EFFECTS
@@ -305,7 +409,6 @@ function drawParticles() {
     const col = Math.round(p.x);
     const row = Math.round(p.y);
     if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
-      const alpha = p.life / p.maxLife;
       grid[row][col].ch = p.ch;
       grid[row][col].color = p.color;
     }
@@ -327,10 +430,8 @@ const FIRE_CHARS = ['{', '}', '*', '^', '~', '"'];
 const FIRE_COLORS = ['#f83', '#fa4', '#fc6', '#f62', '#fd8'];
 
 function drawCampfire(cx, cy) {
-  // Logs
   drawStr(cx - 2, cy + 2, '\\===/', '#864');
   drawStr(cx - 1, cy + 3, '===', '#753');
-  // Fire
   for (let i = 0; i < 6; i++) {
     const fx = cx - 1 + Math.floor(Math.random() * 3);
     const fy = cy - Math.floor(Math.random() * 2) + 1;
@@ -341,7 +442,6 @@ function drawCampfire(cx, cy) {
       grid[fy][fx].color = col;
     }
   }
-  // Sparks
   if (Math.random() < 0.3) {
     addParticle(cx + (Math.random() - 0.5) * 2, cy - 1, '.', '#fa4',
       (Math.random() - 0.5) * 0.1, -0.15, 15 + Math.floor(Math.random() * 10));
@@ -372,7 +472,6 @@ const RANGED_RANGE = 25;
 // CAMP SCENE
 // ============================================================
 let campMenuIndex = 0;
-const CAMP_MENU = ['[C] Adventure', '[F] Shop', '[E] Inventory'];
 
 function updateCamp() {
   if (wasPressed('c') || wasPressed('C')) {
@@ -380,13 +479,25 @@ function updateCamp() {
     return;
   }
   if (wasPressed('f') || wasPressed('F')) {
-    initShop();
-    STATE.scene = 'shop';
+    if (STATE.unlockedAreas >= 2) {
+      initForge();
+      filterSort = 0; filterRarity = 0; filterSlot = 0;
+      STATE.scene = 'forge';
+    }
     return;
   }
   if (wasPressed('e') || wasPressed('E')) {
     invCursor = 0;
+    filterSort = 0; filterRarity = 0; filterSlot = 0;
     STATE.scene = 'inventory';
+    return;
+  }
+  if (wasPressed('n') || wasPressed('N')) {
+    if (STATE.unlockedAreas >= 2) {
+      initEnchant();
+      filterSort = 0; filterRarity = 0; filterSlot = 0;
+      STATE.scene = 'enchant';
+    }
     return;
   }
 }
@@ -394,30 +505,30 @@ function updateCamp() {
 function drawCamp() {
   campFrame++;
 
-  // Title banner (rows 0-2)
   drawBox(0, 0, 100, 3, ' S T O N E   S T O R Y   A U T O - B A T T L E R ', '#888');
 
-  // Left panel: HERO STATS (col 1, row 4, 28w, 20h)
   const stats = getHeroStats();
   drawBox(1, 4, 28, 20, ' HERO STATS ', '#fd0');
   drawStr(3, 6, `Gold: ${STATE.gold}`, '#fd0');
   drawBoxDivider(1, 7, 28, '#553');
-  drawStr(3, 8, `HP:   ${stats.maxHp}`, '#5a5');
-  drawStr(3, 9, `ATK:  ${stats.attack}`, '#f85');
-  drawStr(3, 10, `DEF:  ${stats.defense}`, '#58f');
-  drawStr(3, 11, `CRIT: ${(stats.critChance*100).toFixed(0)}%`, '#ff0');
-  drawStr(3, 12, `SPD:  ${stats.attackSpeed.toFixed(1)}`, '#adf');
-  drawBoxDivider(1, 13, 28, '#553');
-  drawStr(3, 14, 'Equipped:', '#aaa');
+  drawStr(3, 8, `Level: ${STATE.level}`, '#adf');
+  drawStr(3, 9, `EXP: ${STATE.exp}/${STATE.expToNext}`, '#8cf');
+  drawStr(3, 10, `HP:   ${stats.maxHp}`, '#5a5');
+  drawStr(3, 11, `ATK:  ${stats.attack}`, '#f85');
+  drawStr(3, 12, `DEF:  ${stats.defense}`, '#58f');
+  drawStr(3, 13, `CRIT: ${(stats.critChance*100).toFixed(0)}%`, '#ff0');
+  drawStr(3, 14, `SPD:  ${stats.attackSpeed.toFixed(1)}`, '#adf');
+  drawBoxDivider(1, 15, 28, '#553');
+  drawStr(3, 16, 'Equipped:', '#aaa');
   for (const slot of ['weapon','armor','accessory']) {
     const item = STATE.equipped[slot];
-    const row = slot === 'weapon' ? 15 : slot === 'armor' ? 16 : 17;
+    const row = slot === 'weapon' ? 17 : slot === 'armor' ? 18 : 19;
     const name = item ? item.name : '(none)';
     drawStr(3, row, `${slot}: ${name}`, item ? RARITY_COLORS[item.rarity] : '#555');
   }
-  drawBoxDivider(1, 18, 28, '#553');
-  drawStr(3, 19, 'Materials:', '#aaa');
-  let matRow = 20;
+  drawBoxDivider(1, 20, 28, '#553');
+  drawStr(3, 21, 'Materials:', '#aaa');
+  let matRow = 22;
   for (const m in STATE.materials) {
     if (STATE.materials[m] > 0) {
       drawStr(3, matRow, `${m}: ${STATE.materials[m]}`, '#888');
@@ -425,8 +536,7 @@ function drawCamp() {
     }
   }
 
-  // Center: Scenic area (cols 30-69, rows 4-23)
-  // Stars/sky
+  // Center: Scenic area
   const starSeed = campFrame * 0.01;
   for (let c = 30; c < 70; c++) {
     for (let r = 4; r < 10; r++) {
@@ -437,7 +547,6 @@ function drawCamp() {
       }
     }
   }
-  // Distant mountain silhouette
   for (let c = 30; c < 70; c++) {
     const mc = (c - 30) % 40;
     const mh = Math.sin(mc * 0.18) * 3 + Math.sin(mc * 0.07) * 2 + 5;
@@ -446,24 +555,27 @@ function drawCamp() {
       if (r >= 4 && r < 20) drawStr(c, r, '.', '#333');
     }
   }
-  // Hero + campfire
   const hx = 44, hy = 16;
   const heroFrame = campFrame % 60 < 30 ? HERO_IDLE : HERO_WALK;
   drawSprite(heroFrame, hx, hy, HERO_COLOR);
   drawCampfire(hx + 8, hy);
 
-  // Right panel: CAMP MENU (col 71, row 4, 28w, 20h)
+  // Right panel: CAMP MENU
   drawBox(71, 4, 28, 20, ' CAMP MENU ', '#8cf');
   drawStr(73, 7, '[C] Adventure', '#ddd');
-  drawStr(73, 9, '[F] Shop', '#ddd');
+  const forgeUnlocked = STATE.unlockedAreas >= 2;
+  drawStr(73, 9, '[F] Forge', forgeUnlocked ? '#ddd' : '#555');
+  if (!forgeUnlocked) drawStr(83, 9, '(locked)', '#444');
   drawStr(73, 11, '[E] Inventory', '#ddd');
-  drawBoxDivider(71, 13, 28, '#446');
-  drawStr(73, 15, `Areas: ${STATE.unlockedAreas}/5`, '#888');
-  drawStr(73, 17, 'Venture forth and', '#555');
-  drawStr(73, 18, 'conquer the stone', '#555');
-  drawStr(73, 19, 'lands...', '#555');
+  drawStr(73, 13, '[N] Enchant', forgeUnlocked ? '#ddd' : '#555');
+  if (!forgeUnlocked) drawStr(85, 13, '(locked)', '#444');
+  drawBoxDivider(71, 15, 28, '#446');
+  drawStr(73, 17, `Areas: ${STATE.unlockedAreas}/5`, '#888');
+  drawStr(73, 19, 'Venture forth and', '#555');
+  drawStr(73, 20, 'conquer the stone', '#555');
+  drawStr(73, 21, 'lands...', '#555');
 
-  // Ground fill (rows 20-23) across full width
+  // Ground fill
   for (let c = 0; c < COLS; c++) {
     drawStr(c, 20, '_', '#665');
     for (let r = 21; r < 24; r++) {
@@ -492,7 +604,6 @@ function updateAreaSelect() {
       STATE.scene = 'adventure';
     }
   }
-  // Number keys
   for (let i = 0; i < 5; i++) {
     if (wasPressed(String(i + 1)) && i < STATE.unlockedAreas) {
       STATE.currentArea = i;
@@ -503,10 +614,8 @@ function updateAreaSelect() {
 }
 
 function drawAreaSelect() {
-  // Title box (row 0-2)
   drawBox(0, 0, 100, 3, ' S E L E C T   A R E A ', '#ddd');
 
-  // 5 area cards (row 4-10), each 19w x 7h, horizontal
   for (let i = 0; i < 5; i++) {
     const unlocked = i < STATE.unlockedAreas;
     const selected = i === areaSelectCursor;
@@ -525,7 +634,6 @@ function drawAreaSelect() {
     if (selected) drawStr(col + 2, 9, '\u25B2', '#fff');
   }
 
-  // Detail panel (row 12-29, 98w)
   drawBox(1, 12, 98, 18, ' AREA DETAILS ', '#888');
   const sel = areaSelectCursor;
   if (sel < STATE.unlockedAreas) {
@@ -540,7 +648,6 @@ function drawAreaSelect() {
     }
     drawStr(3, 21, 'Boss:', '#f55');
     drawStr(5, 22, `${area.boss.name}  HP:${area.boss.hp} ATK:${area.boss.attack} DEF:${area.boss.defense}`, area.boss.color);
-    // Small landscape preview on right side
     for (let c = 65; c < 97; c++) {
       const mc = (c - 65) % 32;
       const mh = Math.sin(mc * 0.2) * 2 + 3;
@@ -554,13 +661,12 @@ function drawAreaSelect() {
     drawStr(3, 16, 'Locked - defeat the previous boss to unlock', '#555');
   }
 
-  // Instructions box (row 31-36)
   drawBox(0, 31, 100, 6, ' CONTROLS ', '#555');
   drawStr(3, 33, 'Arrow keys / Left-Right to select    Enter to begin    Escape to go back    1-5 to quick-select', '#666');
 }
 
 // ============================================================
-// ADVENTURE SCENE (Auto-Battler Core)
+// ADVENTURE SCENE (Auto-Battler Core) — 2x Slower
 // ============================================================
 let advState = {};
 
@@ -582,13 +688,18 @@ function initAdventure() {
     heroAttackAnim: 0,
     heroHitFlash: 0,
     enemies: [],
-    phase: 'walking', // walking, combat, bossIntro, victory, transition
+    phase: 'walking', // walking, combat, bossIntro, transition, chest, victory
     walkTimer: 0,
     waveSpawned: false,
     transitionTimer: 0,
     bossIntroTimer: 0,
     frame: 0,
-    walkCycle: 0
+    walkCycle: 0,
+    // Chest state
+    chestItem: null,
+    chestGold: 0,
+    chestMaterials: {},
+    showChest: false
   };
   spawnWave();
 }
@@ -643,7 +754,7 @@ function spawnWave() {
       });
     }
     advState.phase = 'walking';
-    advState.walkTimer = 60;
+    advState.walkTimer = 120; // 2x slower (was 60)
   }
   advState.waveSpawned = true;
 }
@@ -659,14 +770,13 @@ function updateAdventure() {
   }
 
   if (advState.phase === 'walking') {
-    advState.scrollX += 0.5;
+    advState.scrollX += 0.25; // 2x slower (was 0.5)
     advState.walkCycle++;
     advState.walkTimer--;
-    // Move enemies toward their target range position
     for (const e of advState.enemies) {
       const targetCol = advState.heroCol + e.targetRange;
       if (e.col > targetCol + 1) {
-        e.col -= 0.5;
+        e.col -= 0.25; // 2x slower (was 0.5)
         e.walkCycle = (e.walkCycle || 0) + 1;
       }
     }
@@ -678,7 +788,7 @@ function updateAdventure() {
 
   if (advState.phase === 'transition') {
     advState.transitionTimer--;
-    advState.scrollX += 0.3;
+    advState.scrollX += 0.15; // 2x slower (was 0.3)
     if (advState.transitionTimer <= 0) {
       STATE.wave++;
       if (STATE.wave >= 5) {
@@ -690,13 +800,29 @@ function updateAdventure() {
     return;
   }
 
+  // Chest screen after boss kill
+  if (advState.phase === 'chest') {
+    if (wasPressed('Enter')) {
+      // Collect chest contents
+      if (advState.chestItem) {
+        STATE.loot.push(advState.chestItem);
+      }
+      STATE.lootGold += advState.chestGold;
+      for (const m in advState.chestMaterials) {
+        STATE.lootMaterials[m] = (STATE.lootMaterials[m] || 0) + advState.chestMaterials[m];
+      }
+      // Move to transition
+      advState.phase = 'transition';
+      advState.transitionTimer = 80; // 2x slower (was 40)
+    }
+    return;
+  }
+
   if (advState.phase === 'victory') {
     if (wasPressed('Enter')) {
-      // Collect loot
       for (const item of STATE.loot) STATE.inventory.push(item);
       STATE.gold += STATE.lootGold;
       for (const m in STATE.lootMaterials) STATE.materials[m] = (STATE.materials[m] || 0) + STATE.lootMaterials[m];
-      // Unlock next area
       if (STATE.currentArea + 1 >= STATE.unlockedAreas && STATE.unlockedAreas < 5) {
         STATE.unlockedAreas++;
       }
@@ -708,15 +834,14 @@ function updateAdventure() {
 
   if (advState.phase !== 'combat') return;
 
-  // Hero attack
-  advState.heroAttackTimer += 16.67;
+  // Hero attack — 2x slower (8.33 instead of 16.67)
+  advState.heroAttackTimer += 8.33;
   const heroAtkInterval = 1000 / stats.attackSpeed;
   if (advState.heroAttackAnim > 0) advState.heroAttackAnim--;
   if (advState.heroHitFlash > 0) advState.heroHitFlash--;
 
   if (advState.heroAttackTimer >= heroAtkInterval) {
     advState.heroAttackTimer = 0;
-    // Find closest alive enemy
     let target = null, minDist = 999;
     for (const e of advState.enemies) {
       if (!e.alive) continue;
@@ -724,23 +849,20 @@ function updateAdventure() {
       if (d < minDist) { minDist = d; target = e; }
     }
     if (target) {
-      advState.heroAttackAnim = 18;
+      advState.heroAttackAnim = 36; // 2x slower (was 18)
       const isCrit = Math.random() < stats.critChance;
       let dmg = Math.max(1, stats.attack - target.defense);
       if (isCrit) dmg *= 2;
       target.currentHp -= dmg;
       target.hitFlash = 9;
-      // Slash sweep particles (arc toward target)
       const slashChars = ['/', '|', '\\'];
       for (let i = 0; i < 4; i++) {
         const ch = slashChars[i % slashChars.length];
         addParticle(advState.heroCol + 3 + i * 1.5, advState.heroRow - 1 + i * 0.5,
           ch, '#fff', 1.0, (i - 1.5) * 0.15, 10);
       }
-      // Crit burst
       if (isCrit) {
         addFloatingText(target.col, target.row - 1, 'CRIT! ' + String(dmg), '#ff0');
-        // Star burst around target
         const burstChars = ['*', '\u2605', '*', '\u2605'];
         for (let i = 0; i < 8; i++) {
           const angle = (i / 8) * Math.PI * 2;
@@ -754,7 +876,7 @@ function updateAdventure() {
       if (target.currentHp <= 0) {
         target.alive = false;
         target.deathAnim = 30;
-        // Dramatic death explosion
+        // Death explosion
         for (const line of target.sprite) {
           for (const ch of line) {
             if (ch !== ' ') {
@@ -763,31 +885,43 @@ function updateAdventure() {
             }
           }
         }
-        // Extra burst particles
         for (let i = 0; i < 6; i++) {
           const angle = (i / 6) * Math.PI * 2;
           addParticle(target.col + 2, target.row + 1,
             '*', '#fff', Math.cos(angle) * 0.6, Math.sin(angle) * 0.4, 20);
         }
-        // Lingering smoke particles
         for (let i = 0; i < 4; i++) {
           addParticle(target.col + Math.random()*5, target.row + Math.random()*3,
             '\u2591', '#555', (Math.random()-0.5)*0.05, -0.03, 40);
         }
-        // Drops
+
+        // LOOT CHANGES: Gold + EXP + materials only (no equipment from regular enemies)
         const goldDrop = 3 + Math.floor(Math.random() * 5) + STATE.currentArea * 2;
         STATE.lootGold += goldDrop;
         addFloatingText(target.col, target.row - 2, `+${goldDrop}g`, '#fd0');
-        // Material drop
+
+        // EXP drop
+        const expAmount = target.isBoss
+          ? 25 + STATE.currentArea * 10
+          : 5 + STATE.currentArea * 3;
+        addExp(expAmount);
+        addFloatingText(target.col + 4, target.row - 2, `+${expAmount}exp`, '#0ff');
+
+        // Material drop (30% chance)
         if (Math.random() < 0.3) {
           const mat = AREAS[STATE.currentArea].material;
           STATE.lootMaterials[mat] = (STATE.lootMaterials[mat] || 0) + 1;
         }
-        // Equipment drop
-        if (target.isBoss || Math.random() < 0.1) {
-          const drop = generateDrop(STATE.currentArea);
-          STATE.loot.push(drop);
-          addFloatingText(target.col, target.row - 3, drop.name, RARITY_COLORS[drop.rarity]);
+
+        // Boss: prepare chest (no direct equipment drop)
+        if (target.isBoss) {
+          advState.chestItem = generateDrop(STATE.currentArea);
+          advState.chestGold = 15 + STATE.currentArea * 10;
+          const mat = AREAS[STATE.currentArea].material;
+          const matCount = 2 + Math.floor(Math.random() * 2); // 2-3
+          advState.chestMaterials = {};
+          advState.chestMaterials[mat] = matCount;
+          advState.showChest = true;
         }
       }
     }
@@ -799,38 +933,33 @@ function updateAdventure() {
     if (e.hitFlash > 0) e.hitFlash--;
     if (e.attackAnim > 0) e.attackAnim--;
 
-    // Move melee enemies closer during combat if not in range
     const distToHero = e.col - advState.heroCol;
     const inRange = distToHero <= e.targetRange + 1;
 
     if (!inRange) {
-      // Walk toward target range
-      e.col -= 0.4;
+      e.col -= 0.2; // 2x slower (was 0.4)
       e.walkCycle = (e.walkCycle || 0) + 1;
-      continue; // Don't attack while walking
+      continue;
     }
 
-    e.attackTimer += 16.67;
+    e.attackTimer += 8.33; // 2x slower (was 16.67)
     const interval = 1000 / (e.speed || 1);
     if (e.attackTimer >= interval) {
       e.attackTimer = 0;
-      e.attackAnim = 15;
+      e.attackAnim = 30; // 2x slower (was 15)
       const dmg = Math.max(1, e.attack - stats.defense);
       STATE.heroHp -= dmg;
       advState.heroHitFlash = 9;
       addFloatingText(advState.heroCol, advState.heroRow - 1, String(dmg), '#f55');
 
       if (e.type === 'ranged') {
-        // Spawn projectile from enemy to hero
         const pChar = e.projectileChar || '-';
         const pDist = e.col - advState.heroCol;
         const pSpeed = -1.5;
         addParticle(e.col, e.row + 1, pChar, e.color, pSpeed, 0, Math.ceil(pDist / 1.5));
         addParticle(e.col - 1, e.row + 1, pChar, e.color, pSpeed, 0, Math.ceil(pDist / 1.5));
-        // Trailing particle (dimmer, shorter life)
         addParticle(e.col + 1, e.row + 1, '.', '#666', pSpeed * 0.7, 0, Math.ceil(pDist / 2.5));
       } else {
-        // Melee impact symbols
         const impactChars = ['\u2573', '\u203B', '*'];
         const ic = impactChars[Math.floor(Math.random() * impactChars.length)];
         addParticle(advState.heroCol + 1, advState.heroRow + 1, ic, '#f55', -0.2, 0, 10);
@@ -848,8 +977,14 @@ function updateAdventure() {
 
   // Check all enemies dead
   if (advState.enemies.every(e => !e.alive && e.deathAnim <= 0)) {
-    advState.phase = 'transition';
-    advState.transitionTimer = 40;
+    // If boss was killed, show chest screen
+    if (advState.showChest) {
+      advState.phase = 'chest';
+      advState.showChest = false;
+    } else {
+      advState.phase = 'transition';
+      advState.transitionTimer = 80; // 2x slower (was 40)
+    }
   }
 
   // Decrement death anims
@@ -868,25 +1003,20 @@ function drawEnemyAura(enemy, areaIdx, frame, enemyIndex) {
   const rx = (Math.random() - 0.5) * (spread * 2 + enemy.sprite[0].length);
   const ry = (Math.random() - 0.5) * (spread + enemy.sprite.length);
   if (areaIdx === 0) {
-    // Bone: faint dust drifting down
     const ch = Math.random() < 0.5 ? '\u00B7' : '\u00B0';
     addParticle(cx + rx, cy + ry, ch, '#776', (Math.random()-0.5)*0.05, 0.08, 18);
   } else if (areaIdx === 1) {
-    // Iron: metallic sparks
     const ch = Math.random() < 0.5 ? '*' : '+';
     addParticle(cx + rx, cy + ry, ch, '#8ab', (Math.random()-0.5)*0.15, (Math.random()-0.5)*0.15, 12);
   } else if (areaIdx === 2) {
-    // Crystal: shimmering glints
     const chars = ['\u2726', '\u25C6', '*'];
     const ch = chars[Math.floor(Math.random() * chars.length)];
     const colors = ['#aaf', '#daf', '#88d'];
     addParticle(cx + rx, cy + ry, ch, colors[Math.floor(Math.random() * colors.length)], (Math.random()-0.5)*0.1, -0.06, 20);
   } else if (areaIdx === 3) {
-    // Shadow: wispy trails
     const ch = Math.random() < 0.5 ? '~' : '\u2591';
     addParticle(cx + rx, cy + ry, ch, '#549', (Math.random()-0.5)*0.1, -0.04, 22);
   } else if (areaIdx === 4) {
-    // Ember: rising embers
     const chars = ['^', '*', '\u00B7'];
     const ch = chars[Math.floor(Math.random() * chars.length)];
     const colors = ['#f85', '#f63', '#fa4'];
@@ -897,14 +1027,13 @@ function drawEnemyAura(enemy, areaIdx, frame, enemyIndex) {
 function drawAdventure() {
   const area = AREAS[STATE.currentArea];
 
-  // Scrolling landscape
   drawLandscape(area);
 
   // Hero
   let heroSprite = HERO_IDLE;
   let heroColor = HERO_COLOR;
   if (advState.phase === 'walking') {
-    heroSprite = advState.walkCycle % 20 < 10 ? HERO_WALK : HERO_IDLE;
+    heroSprite = advState.walkCycle % 40 < 20 ? HERO_WALK : HERO_IDLE; // 2x slower (was %20 <10)
   }
   if (advState.heroAttackAnim > 0) heroSprite = HERO_ATTACK;
   if (advState.heroHitFlash > 0 && advState.heroHitFlash % 2 === 0) heroColor = '#f33';
@@ -916,7 +1045,6 @@ function drawAdventure() {
     if (!e.alive) continue;
     let eColor = e.color;
     if (e.hitFlash > 0 && e.hitFlash % 2 === 0) eColor = '#f33';
-    // Choose sprite based on state
     let eSprite = e.sprite;
     const distToHero = e.col - advState.heroCol;
     const isMoving = distToHero > e.targetRange + 1;
@@ -926,23 +1054,18 @@ function drawAdventure() {
       eColor = '#fff';
     } else if (isMoving || advState.phase === 'walking') {
       const cycle = e.walkCycle || 0;
-      eSprite = (cycle % 20 < 10) ? (e.walkSprite || e.sprite) : e.sprite;
+      eSprite = (cycle % 40 < 20) ? (e.walkSprite || e.sprite) : e.sprite; // 2x slower (was %20 <10)
     } else {
       isIdle = true;
-      // Breathing: alternate a character every ~40 frames
       if (Math.floor((advState.frame + ei * 17) / 40) % 2 === 1) {
         eSprite = e.walkSprite || e.sprite;
       }
     }
-    // Idle bobbing offset
     const bobOffset = isIdle ? Math.sin(advState.frame * 0.06 + ei) * 0.5 : 0;
     const drawRow = Math.round(e.row + bobOffset);
-    // Hit reaction: knockback shift
     const knockCol = (e.hitFlash > 6) ? 1 : 0;
     drawSprite(eSprite, Math.round(e.col) + knockCol, drawRow, eColor);
-    // Elemental aura particles
     drawEnemyAura(e, STATE.currentArea, advState.frame, ei);
-    // Enemy HP bar
     if (!e.isBoss) {
       const barW = 8;
       const filled = Math.max(0, Math.round(barW * e.currentHp / e.maxHp));
@@ -951,25 +1074,21 @@ function drawAdventure() {
     }
   }
 
-  // Particles and floating text
   drawParticles();
 
   // HUD
-  // Top left: area + wave
   drawStr(1, 0, `${area.name} - Wave ${STATE.wave + 1}/5`, '#aaa');
-  // Top center: hero HP
+  // Level + HP
   const stats = getHeroStats();
   const hpBarW = 20;
   const hpFilled = Math.max(0, Math.round(hpBarW * STATE.heroHp / STATE.heroMaxHp));
   const hpColor = STATE.heroHp / STATE.heroMaxHp > 0.5 ? '#5a5' : (STATE.heroHp / STATE.heroMaxHp > 0.25 ? '#fa5' : '#f55');
-  drawStr(38, 0, `HP [${('#'.repeat(hpFilled) + '-'.repeat(hpBarW - hpFilled))}] ${STATE.heroHp}/${STATE.heroMaxHp}`, hpColor);
-  // Top right: gold
+  drawStr(35, 0, `Lv${STATE.level} HP [${('#'.repeat(hpFilled) + '-'.repeat(hpBarW - hpFilled))}] ${STATE.heroHp}/${STATE.heroMaxHp}`, hpColor);
   drawStr(85, 0, `Gold: ${STATE.gold + STATE.lootGold}`, '#fd0');
 
-  // Separator line under top HUD
   for (let c = 0; c < COLS; c++) drawStr(c, 1, '\u2550', '#333');
 
-  // Boss HP bar wrapped in a small box
+  // Boss HP bar
   for (const e of advState.enemies) {
     if (e.isBoss && e.alive) {
       drawBox(14, 2, 72, 3, ` ${e.name} `, e.color);
@@ -979,7 +1098,7 @@ function drawAdventure() {
     }
   }
 
-  // Boss intro text with ornate border
+  // Boss intro text
   if (advState.phase === 'bossIntro') {
     const boss = advState.enemies[0];
     drawBox(30, 12, 40, 7, null, '#f55');
@@ -987,6 +1106,41 @@ function drawAdventure() {
     drawStr(42, 14, '! BOSS !', '#f55');
     drawStr(50 - Math.floor(boss.name.length/2), 16, boss.name, boss.color);
     drawStr(32, 17, '\u255A' + '\u2550'.repeat(36) + '\u255D', '#f88');
+  }
+
+  // Chest screen
+  if (advState.phase === 'chest') {
+    drawBox(25, 6, 50, 24, ' CHEST FOUND! ', '#fd0');
+    // Chest ASCII art
+    drawStr(40, 9,  '  _______  ', '#fa5');
+    drawStr(40, 10, ' /       \\ ', '#fa5');
+    drawStr(40, 11, '|  [===]  |', '#fd0');
+    drawStr(40, 12, '|_________|', '#fa5');
+    drawStr(40, 13, '|         |', '#a85');
+    drawStr(40, 14, '|   ___   |', '#a85');
+    drawStr(40, 15, '|  |   |  |', '#fd0');
+    drawStr(40, 16, '|__|___|__|', '#a85');
+
+    let cy = 18;
+    if (advState.chestItem) {
+      drawStr(30, cy, `Equipment: ${advState.chestItem.name}`, RARITY_COLORS[advState.chestItem.rarity]);
+      cy++;
+      let statStr = '';
+      if (advState.chestItem.attack) statStr += `ATK+${advState.chestItem.attack} `;
+      if (advState.chestItem.defense) statStr += `DEF+${advState.chestItem.defense} `;
+      if (advState.chestItem.hp) statStr += `HP+${advState.chestItem.hp} `;
+      drawStr(32, cy, statStr, '#888');
+      cy++;
+    }
+    if (advState.chestGold > 0) {
+      drawStr(30, cy, `Gold: +${advState.chestGold}`, '#fd0');
+      cy++;
+    }
+    for (const m in advState.chestMaterials) {
+      drawStr(30, cy, `${m}: +${advState.chestMaterials[m]}`, '#aaa');
+      cy++;
+    }
+    drawStr(30, Math.min(cy + 1, 27), 'Press Enter to continue', '#888');
   }
 
   // Victory screen
@@ -1009,9 +1163,9 @@ function drawAdventure() {
     drawStr(30, Math.min(y + 4 + STATE.loot.length, 27), 'Press Enter to return to camp', '#888');
   }
 
-  // Bottom stats bar in a box (rows 34-36)
+  // Bottom stats bar
   drawBox(0, 34, 100, 3, null, '#444');
-  drawStr(2, 35, `ATK:${stats.attack} DEF:${stats.defense} SPD:${stats.attackSpeed.toFixed(1)} CRIT:${(stats.critChance*100).toFixed(0)}%`, '#888');
+  drawStr(2, 35, `Lv${STATE.level} ATK:${stats.attack} DEF:${stats.defense} SPD:${stats.attackSpeed.toFixed(1)} CRIT:${(stats.critChance*100).toFixed(0)}%`, '#888');
   const wep = STATE.equipped.weapon;
   const arm = STATE.equipped.armor;
   const acc = STATE.equipped.accessory;
@@ -1024,7 +1178,6 @@ function drawLandscape(area) {
   const areaColors = ['#553','#668','#66a','#448','#864'];
   const mountainColor = areaColors[areaIdx] || '#444';
 
-  // Layer 1 - Far sky (rows 4-6): sparse stars, 0.05x parallax
   for (let c = 0; c < COLS; c++) {
     const sc = c + Math.floor(sx * 0.05);
     const hash = ((sc * 127 + 311) % 97);
@@ -1035,7 +1188,6 @@ function drawLandscape(area) {
     }
   }
 
-  // Layer 2 - Distant mountains (rows 7-14): dual sine waves, 0.15x parallax
   for (let c = 0; c < COLS; c++) {
     const mc = c + Math.floor(sx * 0.15);
     const mh = Math.sin(mc * 0.08) * 4 + Math.sin(mc * 0.17) * 2 + 6;
@@ -1048,7 +1200,6 @@ function drawLandscape(area) {
     }
   }
 
-  // Layer 3 - Mid mountains (rows 15-22): jagged peaks, 0.35x parallax
   for (let c = 0; c < COLS; c++) {
     const mc = c + Math.floor(sx * 0.35);
     const mh = Math.sin(mc * 0.2) * 3 + Math.sin(mc * 0.31) * 1.5 + 4;
@@ -1063,7 +1214,6 @@ function drawLandscape(area) {
     }
   }
 
-  // Layer 4 - Foreground hills (rows 23-26): low rolling, 0.6x parallax
   for (let c = 0; c < COLS; c++) {
     const hc = c + Math.floor(sx * 0.6);
     const hh = Math.sin(hc * 0.12) * 1.5 + 2;
@@ -1077,14 +1227,12 @@ function drawLandscape(area) {
     }
   }
 
-  // Layer 5 - Ground line (row 29)
   for (let c = 0; c < COLS; c++) {
     const gc = (c + sx) % 13;
     const ch = gc % 7 === 0 ? 'o' : (gc % 3 === 0 ? '_' : '\u2500');
     drawStr(c, advState.heroRow + 3, ch, '#665');
   }
 
-  // Layer 6 - Ground fill (rows 30+)
   for (let c = 0; c < COLS; c++) {
     const gc = (c + sx) % 17;
     const groundPattern = area.landscape.ground;
@@ -1096,14 +1244,12 @@ function drawLandscape(area) {
     }
   }
 
-  // Area-themed decorations scrolling at 0.7x parallax
   const decoOffset = Math.floor(sx * 0.7);
   for (let i = 0; i < 8; i++) {
     const baseCol = ((i * 29 + 7) - decoOffset % 200 + 400) % 200 - 50;
     if (baseCol < -5 || baseCol >= COLS + 5) continue;
     const col = Math.floor(baseCol);
     if (areaIdx === 0) {
-      // Barren Fields: dead trees, bone piles
       if (i % 2 === 0) {
         drawStr(col, 24, '+', '#664');
         drawStr(col, 25, '|', '#664');
@@ -1113,7 +1259,6 @@ function drawLandscape(area) {
         drawStr(col, 27, 'o~o', '#776');
       }
     } else if (areaIdx === 1) {
-      // Iron Mines: support beams, stalactites
       if (i % 2 === 0) {
         drawStr(col, 5, 'V', '#556');
         drawStr(col, 6, '|', '#556');
@@ -1123,7 +1268,6 @@ function drawLandscape(area) {
         drawStr(col, 26, '\u2551', '#667');
       }
     } else if (areaIdx === 2) {
-      // Crystal Caverns: crystal formations, stalagmites
       if (i % 2 === 0) {
         drawStr(col, 25, '/\\', '#aaf');
         drawStr(col, 24, '*', '#ddf');
@@ -1132,7 +1276,6 @@ function drawLandscape(area) {
         drawStr(col, 27, '||', '#88d');
       }
     } else if (areaIdx === 3) {
-      // Shadow Thicket: twisted trees, underbrush
       if (i % 2 === 0) {
         drawStr(col, 22, '@@', '#3a3');
         drawStr(col, 23, '@@', '#3a3');
@@ -1142,7 +1285,6 @@ function drawLandscape(area) {
         drawStr(col, 27, '~"~', '#343');
       }
     } else if (areaIdx === 4) {
-      // Ember Throne: lava cracks, flame geysers
       if (i % 2 === 0) {
         drawStr(col, 27, '~v~', '#f52');
         drawStr(col, 28, '^^^', '#f83');
@@ -1156,7 +1298,6 @@ function drawLandscape(area) {
     }
   }
 
-  // Ambient particles for darker areas
   if (areaIdx >= 3 && Math.random() < 0.15) {
     const ch = areaIdx === 3 ? '~' : '^';
     addParticle(Math.random() * COLS, 25 + Math.random() * 5, ch,
@@ -1166,111 +1307,510 @@ function drawLandscape(area) {
 }
 
 // ============================================================
-// SHOP SCENE
+// FORGE SCENE
 // ============================================================
-let shopItems = [];
-let shopCursor = 0;
-let shopMessage = '';
-let shopMessageTimer = 0;
+let forgeTab = 0; // 0=craft, 1=upgrade
+let forgeCursor = 0;
+let forgeUpgradeCursor = 0;
+let forgeMessage = '';
+let forgeMessageTimer = 0;
 
-function initShop() {
-  shopCursor = 0;
-  shopMessage = '';
-  shopMessageTimer = 0;
-  // Generate 6 items
-  shopItems = [];
+function initForge() {
+  forgeTab = 0;
+  forgeCursor = 0;
+  forgeUpgradeCursor = 0;
+  forgeMessage = '';
+  forgeMessageTimer = 0;
+}
+
+function getForgeRecipes() {
   const maxTier = Math.min(STATE.unlockedAreas - 1, 4);
-  const pool = EQUIPMENT_TABLE.filter(e => e.tier <= maxTier);
-  // Pick 6 random items
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  shopItems = shuffled.slice(0, Math.min(6, shuffled.length)).map(e => ({ ...e }));
-  // Add heal option
-  shopItems.push({ name: 'Heal to Full', cost: 10, isHeal: true, slot: '-', rarity: 'common' });
+  return EQUIPMENT_TABLE.filter(e => e.tier <= maxTier);
 }
 
-function updateShop() {
-  if (shopMessageTimer > 0) shopMessageTimer--;
-  if (wasPressed('Escape')) { STATE.scene = 'camp'; return; }
-  if (wasPressed('ArrowUp') && shopCursor > 0) shopCursor--;
-  if (wasPressed('ArrowDown') && shopCursor < shopItems.length - 1) shopCursor++;
-  if (wasPressed('Enter')) {
-    const item = shopItems[shopCursor];
-    if (!item) return;
-    if (item.isHeal) {
-      if (STATE.gold >= item.cost) {
-        STATE.gold -= item.cost;
-        const stats = getHeroStats();
-        STATE.heroHp = stats.maxHp;
-        STATE.heroMaxHp = stats.maxHp;
-        shopMessage = 'Healed to full!';
-        shopMessageTimer = 60;
+function getUpgradeableItems() {
+  return STATE.inventory.filter(item => {
+    const lvl = item.upgradeLevel || 0;
+    return lvl < 3;
+  });
+}
+
+function getUpgradeCost(item) {
+  const tier = item.tier || 0;
+  const lvl = (item.upgradeLevel || 0) + 1;
+  const materialNames = ['bone','iron','crystal','shadow','ember'];
+  return {
+    material: materialNames[tier],
+    materialAmount: (tier + 1) * 3,
+    gold: (tier + 1) * 20
+  };
+}
+
+function updateForge() {
+  if (forgeMessageTimer > 0) forgeMessageTimer--;
+  if (wasPressed('Escape')) { filterSort = 0; filterRarity = 0; filterSlot = 0; STATE.scene = 'camp'; return; }
+  if (wasPressed('1')) { forgeTab = 0; forgeCursor = 0; filterSort = 0; filterRarity = 0; filterSlot = 0; }
+  if (wasPressed('2')) { forgeTab = 1; forgeUpgradeCursor = 0; }
+
+  if (forgeTab === 0) {
+    // Craft tab — no filters (recipes, not inventory)
+    const recipes = getForgeRecipes();
+    if (recipes.length === 0) { getScroll(); return; }
+    if (wasPressed('ArrowUp') && forgeCursor > 0) forgeCursor--;
+    if (wasPressed('ArrowDown') && forgeCursor < recipes.length - 1) forgeCursor++;
+    const scroll = getScroll();
+    if (scroll) forgeCursor = Math.max(0, Math.min(recipes.length - 1, forgeCursor + scroll));
+    if (wasPressed('Enter')) {
+      const recipe = recipes[forgeCursor];
+      if (!recipe) return;
+      const cost = FORGE_MATERIAL_COSTS[recipe.tier];
+      if (STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount) {
+        STATE.gold -= cost.gold;
+        STATE.materials[cost.material] -= cost.amount;
+        const newItem = { ...recipe, upgradeLevel: 0 };
+        STATE.inventory.push(newItem);
+        forgeMessage = `Crafted ${recipe.name}!`;
+        forgeMessageTimer = 60;
+        saveGame();
       } else {
-        shopMessage = 'Not enough gold!';
-        shopMessageTimer = 60;
+        forgeMessage = 'Not enough resources!';
+        forgeMessageTimer = 60;
       }
-    } else if (STATE.gold >= item.cost) {
-      STATE.gold -= item.cost;
-      STATE.inventory.push({ ...item });
-      shopMessage = `Bought ${item.name}!`;
-      shopMessageTimer = 60;
-    } else {
-      shopMessage = 'Not enough gold!';
-      shopMessageTimer = 60;
+    }
+  } else {
+    // Upgrade tab — with filters
+    handleFilterKeys(() => { forgeUpgradeCursor = 0; });
+    const items = getFilteredItems(getUpgradeableItems());
+    if (items.length === 0) { getScroll(); return; }
+    if (forgeUpgradeCursor >= items.length) forgeUpgradeCursor = Math.max(0, items.length - 1);
+    if (wasPressed('ArrowUp') && forgeUpgradeCursor > 0) forgeUpgradeCursor--;
+    if (wasPressed('ArrowDown') && forgeUpgradeCursor < items.length - 1) forgeUpgradeCursor++;
+    const scroll = getScroll();
+    if (scroll) forgeUpgradeCursor = Math.max(0, Math.min(items.length - 1, forgeUpgradeCursor + scroll));
+    if (wasPressed('Enter')) {
+      const item = items[forgeUpgradeCursor];
+      if (!item) return;
+      const cost = getUpgradeCost(item);
+      if (STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.materialAmount) {
+        STATE.gold -= cost.gold;
+        STATE.materials[cost.material] -= cost.materialAmount;
+        item.upgradeLevel = (item.upgradeLevel || 0) + 1;
+        // Boost all stats by ~20%
+        const mult = 1.2;
+        if (item.attack) item.attack = Math.round(item.attack * mult);
+        if (item.defense) item.defense = Math.round(item.defense * mult);
+        if (item.hp) item.hp = Math.round(item.hp * mult);
+        if (item.critChance) item.critChance = parseFloat((item.critChance * mult).toFixed(4));
+        if (item.attackSpeed) item.attackSpeed = parseFloat((item.attackSpeed * mult).toFixed(2));
+        // Update name with upgrade suffix
+        const baseName = item.name.replace(/ \+\d$/, '');
+        item.name = `${baseName} +${item.upgradeLevel}`;
+        forgeMessage = `Upgraded to ${item.name}!`;
+        forgeMessageTimer = 60;
+        saveGame();
+      } else {
+        forgeMessage = 'Not enough resources!';
+        forgeMessageTimer = 60;
+      }
     }
   }
 }
 
-function drawShop() {
-  // Title box (row 0-2)
-  drawBox(0, 0, 100, 3, ' S H O P ', '#fd0');
+function drawForge() {
+  drawBox(0, 0, 100, 3, ' F O R G E ', '#f85');
 
-  // Left panel: MERCHANT (col 1, row 4, 30w, 18h)
-  drawBox(1, 4, 30, 28, ' MERCHANT ', '#a85');
-  drawStr(9, 7, '  ___', '#a85');
-  drawStr(9, 8, ' /o o\\', '#a85');
-  drawStr(9, 9, '| \\_/ |', '#a85');
-  drawStr(9, 10, '/|   |\\', '#864');
-  drawStr(9, 11, ' | $ | ', '#fd0');
-  drawStr(9, 12, ' |___|', '#864');
-  drawStr(9, 13, ' /   \\', '#864');
-  drawBoxDivider(1, 15, 30, '#553');
-  drawStr(3, 17, `Gold: ${STATE.gold}`, '#fd0');
-  if (shopMessageTimer > 0) {
-    drawStr(3, 19, shopMessage, '#5f5');
-  }
-  drawStr(3, 22, '"Welcome, traveler.', '#888');
-  drawStr(3, 23, ' Browse my wares!"', '#888');
+  // Tabs
+  drawStr(3, 4, '[1] Craft', forgeTab === 0 ? '#fff' : '#666');
+  drawStr(15, 4, '[2] Upgrade', forgeTab === 1 ? '#fff' : '#666');
+  for (let c = 0; c < COLS; c++) drawStr(c, 5, '\u2500', '#444');
 
-  // Right panel: WARES (col 32, row 4, 67w, 30h)
-  drawBox(32, 4, 67, 28, ' WARES ', '#fd0');
-  // Column headers
-  drawStr(34, 6, 'NAME                   SLOT       COST    STATS', '#888');
-  drawBoxDivider(32, 7, 67, '#553');
-
-  for (let i = 0; i < shopItems.length; i++) {
-    const item = shopItems[i];
-    const selected = i === shopCursor;
-    const prefix = selected ? '> ' : '  ';
-    const color = selected ? '#fff' : (item.isHeal ? '#5a5' : RARITY_COLORS[item.rarity]);
-    const row = 8 + i * 3;
-    const nameStr = item.name.padEnd(22);
-    const slotStr = (item.slot || '-').padEnd(10);
-    const costStr = `${item.cost}g`.padEnd(7);
-    drawStr(34, row, `${prefix}${nameStr} ${slotStr} ${costStr}`, color);
-    if (!item.isHeal) {
-      let statStr = '';
-      if (item.attack) statStr += `ATK+${item.attack} `;
-      if (item.defense) statStr += `DEF+${item.defense} `;
-      if (item.hp) statStr += `HP+${item.hp} `;
-      if (item.critChance) statStr += `CRIT+${(item.critChance*100).toFixed(0)}% `;
-      if (item.attackSpeed) statStr += `SPD+${item.attackSpeed.toFixed(1)}`;
-      drawStr(36, row + 1, statStr, '#888');
+  // Resources bar
+  drawStr(50, 4, `Gold:${STATE.gold}`, '#fd0');
+  let mx = 62;
+  for (const m in STATE.materials) {
+    if (STATE.materials[m] > 0) {
+      drawStr(mx, 4, `${m}:${STATE.materials[m]}`, '#888');
+      mx += m.length + String(STATE.materials[m]).length + 2;
     }
   }
 
-  // Instructions box (row 34-36)
+  if (forgeTab === 0) {
+    // Craft tab
+    drawBox(1, 6, 98, 26, ' CRAFT RECIPES ', '#f85');
+    drawStr(3, 8, 'NAME                  SLOT       COST              STATS', '#888');
+    drawBoxDivider(1, 9, 98, '#553');
+
+    const recipes = getForgeRecipes();
+    const maxVisible = 12;
+    const startIdx = Math.max(0, forgeCursor - maxVisible + 1);
+    for (let i = startIdx; i < Math.min(recipes.length, startIdx + maxVisible); i++) {
+      const recipe = recipes[i];
+      const cost = FORGE_MATERIAL_COSTS[recipe.tier];
+      const selected = i === forgeCursor;
+      const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount;
+      const prefix = selected ? '> ' : '  ';
+      const nameColor = canAfford ? RARITY_COLORS[recipe.rarity] : '#555';
+      const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
+      const row = 10 + (i - startIdx) * 2;
+      const nameStr = recipe.name.padEnd(20);
+      const slotStr = recipe.slot.padEnd(10);
+      const costStr = `${cost.amount} ${cost.material} + ${cost.gold}g`;
+      if (selected) drawStr(3, row, '>', '#fff');
+      drawStr(5, row, `${nameStr}`, nameColor);
+      drawStr(5 + nameStr.length + 1, row, `${slotStr} ${costStr.padEnd(18)}`, detailColor);
+      let statStr = '';
+      if (recipe.attack) statStr += `ATK+${recipe.attack} `;
+      if (recipe.defense) statStr += `DEF+${recipe.defense} `;
+      if (recipe.hp) statStr += `HP+${recipe.hp} `;
+      if (recipe.critChance) statStr += `CRIT+${(recipe.critChance*100).toFixed(0)}% `;
+      if (recipe.attackSpeed) statStr += `SPD+${recipe.attackSpeed.toFixed(1)}`;
+      drawStr(5, row + 1, statStr, '#666');
+    }
+  } else {
+    // Upgrade tab
+    drawBox(1, 6, 98, 26, ' UPGRADE ITEMS ', '#fa5');
+    drawStr(3, 8, 'NAME                  LEVEL   COST              PREVIEW', '#888');
+    drawBoxDivider(1, 9, 98, '#553');
+
+    const items = getFilteredItems(getUpgradeableItems());
+    if (items.length === 0) {
+      drawStr(3, 11, '(No upgradeable items - craft or find equipment first)', '#555');
+    }
+    const maxVisible = 10;
+    const startIdx = Math.max(0, forgeUpgradeCursor - maxVisible + 1);
+    for (let i = startIdx; i < Math.min(items.length, startIdx + maxVisible); i++) {
+      const item = items[i];
+      const cost = getUpgradeCost(item);
+      const selected = i === forgeUpgradeCursor;
+      const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.materialAmount;
+      const prefix = selected ? '> ' : '  ';
+      const nameColor = canAfford ? RARITY_COLORS[item.rarity] : '#555';
+      const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
+      const row = 10 + (i - startIdx) * 2;
+      const lvl = item.upgradeLevel || 0;
+      const nameStr = item.name.padEnd(20);
+      const lvlStr = `+${lvl} -> +${lvl+1}`.padEnd(8);
+      const costStr = `${cost.materialAmount} ${cost.material} + ${cost.gold}g`;
+      if (selected) drawStr(3, row, '>', '#fff');
+      drawStr(5, row, `${nameStr}`, nameColor);
+      drawStr(5 + nameStr.length + 1, row, `${lvlStr} ${costStr.padEnd(18)}`, detailColor);
+      // Preview: show stat boost
+      if (selected) {
+        let preview = 'After: ';
+        const mult = 1.2;
+        if (item.attack) preview += `ATK:${Math.round(item.attack * mult)} `;
+        if (item.defense) preview += `DEF:${Math.round(item.defense * mult)} `;
+        if (item.hp) preview += `HP:${Math.round(item.hp * mult)} `;
+        drawStr(5, row + 1, preview, '#5a5');
+      }
+    }
+  }
+
+  if (forgeTab === 1) drawFilterBar(33);
+  // Message overwrites filter bar when active
+  if (forgeMessageTimer > 0) {
+    drawStr(3, 33, forgeMessage, '#5f5');
+  }
+
   drawBox(0, 34, 100, 3, null, '#555');
-  drawStr(3, 35, 'Arrow keys + Enter to buy    Escape to leave', '#666');
+  drawStr(3, 35, '1/2 tabs  Arrows/Scroll+Enter craft/upgrade  S/R/T filters(upgrade)  Esc leave', '#666');
+}
+
+// ============================================================
+// ENCHANT SCENE
+// ============================================================
+let enchantTab = 0; // 0=elemental, 1=reroll
+let enchantItemCursor = 0;
+let enchantEnchCursor = 0;
+let enchantRerollCursor = 0;
+let enchantMessage = '';
+let enchantMessageTimer = 0;
+let enchantRerollPreview = null;
+let enchantRerollConfirm = false;
+
+function initEnchant() {
+  enchantTab = 0;
+  enchantItemCursor = 0;
+  enchantEnchCursor = 0;
+  enchantRerollCursor = 0;
+  enchantMessage = '';
+  enchantMessageTimer = 0;
+  enchantRerollPreview = null;
+  enchantRerollConfirm = false;
+}
+
+function getEnchantableItems() {
+  return STATE.inventory.filter(item => item.slot && item.slot !== '-');
+}
+
+function getAvailableEnchantments() {
+  return ENCHANTMENTS.filter(e => e.area < STATE.unlockedAreas);
+}
+
+function updateEnchant() {
+  if (enchantMessageTimer > 0) enchantMessageTimer--;
+  if (wasPressed('Escape')) {
+    if (enchantRerollConfirm) {
+      enchantRerollConfirm = false;
+      enchantRerollPreview = null;
+      return;
+    }
+    filterSort = 0; filterRarity = 0; filterSlot = 0;
+    STATE.scene = 'camp';
+    return;
+  }
+  if (wasPressed('1')) { enchantTab = 0; enchantItemCursor = 0; enchantEnchCursor = 0; }
+  if (wasPressed('2')) { enchantTab = 1; enchantRerollCursor = 0; enchantRerollPreview = null; enchantRerollConfirm = false; }
+
+  if (enchantTab === 0) {
+    // Elemental tab — two-step: pick item, then pick enchantment
+    handleFilterKeys(() => { enchantItemCursor = 0; });
+    const items = getFilteredItems(getEnchantableItems());
+    const enchants = getAvailableEnchantments();
+    if (items.length === 0 || enchants.length === 0) { getScroll(); return; }
+    if (enchantItemCursor >= items.length) enchantItemCursor = Math.max(0, items.length - 1);
+
+    // ArrowUp/Down scroll item list (left panel)
+    if (wasPressed('ArrowUp') && enchantItemCursor > 0) enchantItemCursor--;
+    if (wasPressed('ArrowDown') && enchantItemCursor < items.length - 1) enchantItemCursor++;
+    // ArrowLeft/Right scroll enchantment list (right panel)
+    if (wasPressed('ArrowLeft') && enchantEnchCursor > 0) enchantEnchCursor--;
+    if (wasPressed('ArrowRight') && enchantEnchCursor < enchants.length - 1) enchantEnchCursor++;
+    // Scroll wheel moves item cursor
+    const sd = getScroll();
+    if (sd) enchantItemCursor = Math.max(0, Math.min(items.length - 1, enchantItemCursor + sd));
+
+    if (wasPressed('Enter')) {
+      const item = items[enchantItemCursor];
+      const ench = enchants[enchantEnchCursor];
+      if (!item || !ench) return;
+      // Cost: 5 of relevant material + 30g
+      if (STATE.gold >= 30 && (STATE.materials[ench.material] || 0) >= 5) {
+        STATE.gold -= 30;
+        STATE.materials[ench.material] -= 5;
+        item.enchantment = {
+          name: ench.name,
+          attack: ench.attack,
+          defense: ench.defense,
+          hp: ench.hp,
+          critChance: ench.critChance,
+          attackSpeed: ench.attackSpeed,
+          color: ench.color
+        };
+        enchantMessage = `Applied ${ench.name} to ${item.name}!`;
+        enchantMessageTimer = 60;
+        saveGame();
+      } else {
+        enchantMessage = 'Not enough resources! (5 material + 30g)';
+        enchantMessageTimer = 60;
+      }
+    }
+  } else {
+    // Reroll tab
+    handleFilterKeys(() => { enchantRerollCursor = 0; enchantRerollPreview = null; enchantRerollConfirm = false; });
+    const items = getFilteredItems(getEnchantableItems());
+    if (items.length === 0) { getScroll(); return; }
+    if (enchantRerollCursor >= items.length) enchantRerollCursor = Math.max(0, items.length - 1);
+
+    if (enchantRerollConfirm) {
+      // Confirm or cancel reroll
+      getScroll(); // consume any pending scroll
+      if (wasPressed('Enter') || wasPressed('y') || wasPressed('Y')) {
+        // Apply reroll
+        const item = items[enchantRerollCursor];
+        const preview = enchantRerollPreview;
+        if (item.attack !== undefined) item.attack = preview.attack;
+        if (item.defense !== undefined) item.defense = preview.defense;
+        if (item.hp !== undefined) item.hp = preview.hp;
+        if (item.critChance !== undefined) item.critChance = preview.critChance;
+        if (item.attackSpeed !== undefined) item.attackSpeed = preview.attackSpeed;
+        enchantMessage = `Rerolled ${item.name} stats!`;
+        enchantMessageTimer = 60;
+        enchantRerollConfirm = false;
+        enchantRerollPreview = null;
+        saveGame();
+      } else if (wasPressed('n') || wasPressed('N')) {
+        enchantRerollConfirm = false;
+        enchantRerollPreview = null;
+        enchantMessage = 'Reroll cancelled (resources spent)';
+        enchantMessageTimer = 60;
+      }
+      return;
+    }
+
+    if (wasPressed('ArrowUp') && enchantRerollCursor > 0) enchantRerollCursor--;
+    if (wasPressed('ArrowDown') && enchantRerollCursor < items.length - 1) enchantRerollCursor++;
+    const scroll = getScroll();
+    if (scroll) enchantRerollCursor = Math.max(0, Math.min(items.length - 1, enchantRerollCursor + scroll));
+
+    if (wasPressed('Enter')) {
+      const item = items[enchantRerollCursor];
+      if (!item) return;
+      const materialNames = ['bone','iron','crystal','shadow','ember'];
+      const mat = materialNames[item.tier || 0];
+      // Cost: 3 materials + 20g
+      if (STATE.gold >= 20 && (STATE.materials[mat] || 0) >= 3) {
+        STATE.gold -= 20;
+        STATE.materials[mat] -= 3;
+        // Find base stats from EQUIPMENT_TABLE
+        const baseName = item.name.replace(/ \+\d$/, '');
+        const baseItem = EQUIPMENT_TABLE.find(e => e.name === baseName) || item;
+        // Reroll within ±30%
+        const reroll = (val) => {
+          if (!val) return val;
+          const low = Math.round(val * 0.7);
+          const high = Math.round(val * 1.3);
+          return low + Math.floor(Math.random() * (high - low + 1));
+        };
+        const rerollFloat = (val) => {
+          if (!val) return val;
+          const low = val * 0.7;
+          const high = val * 1.3;
+          return parseFloat((low + Math.random() * (high - low)).toFixed(4));
+        };
+        enchantRerollPreview = {
+          attack: reroll(baseItem.attack),
+          defense: reroll(baseItem.defense),
+          hp: reroll(baseItem.hp),
+          critChance: rerollFloat(baseItem.critChance),
+          attackSpeed: rerollFloat(baseItem.attackSpeed)
+        };
+        // Apply upgrade level multiplier if upgraded
+        const lvl = item.upgradeLevel || 0;
+        if (lvl > 0) {
+          const mult = Math.pow(1.2, lvl);
+          if (enchantRerollPreview.attack) enchantRerollPreview.attack = Math.round(enchantRerollPreview.attack * mult);
+          if (enchantRerollPreview.defense) enchantRerollPreview.defense = Math.round(enchantRerollPreview.defense * mult);
+          if (enchantRerollPreview.hp) enchantRerollPreview.hp = Math.round(enchantRerollPreview.hp * mult);
+          if (enchantRerollPreview.critChance) enchantRerollPreview.critChance = parseFloat((enchantRerollPreview.critChance * mult).toFixed(4));
+          if (enchantRerollPreview.attackSpeed) enchantRerollPreview.attackSpeed = parseFloat((enchantRerollPreview.attackSpeed * mult).toFixed(2));
+        }
+        enchantRerollConfirm = true;
+      } else {
+        enchantMessage = `Not enough resources! (3 ${mat} + 20g)`;
+        enchantMessageTimer = 60;
+      }
+    }
+  }
+}
+
+function drawEnchant() {
+  drawBox(0, 0, 100, 3, ' E N C H A N T ', '#a5f');
+
+  // Tabs
+  drawStr(3, 4, '[1] Elemental', enchantTab === 0 ? '#fff' : '#666');
+  drawStr(19, 4, '[2] Reroll', enchantTab === 1 ? '#fff' : '#666');
+  for (let c = 0; c < COLS; c++) drawStr(c, 5, '\u2500', '#444');
+
+  // Resources
+  drawStr(50, 4, `Gold:${STATE.gold}`, '#fd0');
+  let mx = 62;
+  for (const m in STATE.materials) {
+    if (STATE.materials[m] > 0) {
+      drawStr(mx, 4, `${m}:${STATE.materials[m]}`, '#888');
+      mx += m.length + String(STATE.materials[m]).length + 2;
+    }
+  }
+
+  if (enchantTab === 0) {
+    // Elemental tab
+    const items = getFilteredItems(getEnchantableItems());
+    const enchants = getAvailableEnchantments();
+
+    // Left: item picker
+    drawBox(1, 6, 40, 26, ' SELECT ITEM ', '#a5f');
+    if (items.length === 0) {
+      drawStr(3, 8, '(No items to enchant)', '#555');
+    }
+    const maxVisibleItems = 10;
+    const itemStartIdx = Math.max(0, enchantItemCursor - maxVisibleItems + 1);
+    for (let i = itemStartIdx; i < Math.min(items.length, itemStartIdx + maxVisibleItems); i++) {
+      const item = items[i];
+      const selected = i === enchantItemCursor;
+      const prefix = selected ? '> ' : '  ';
+      const enchName = item.enchantment ? ` [${item.enchantment.name}]` : '';
+      const color = selected ? '#fff' : RARITY_COLORS[item.rarity];
+      drawStr(3, 8 + (i - itemStartIdx) * 2, `${prefix}${item.name}${enchName}`, color);
+      if (selected && item.enchantment) {
+        drawStr(5, 9 + (i - itemStartIdx) * 2, `Current: ${item.enchantment.name}`, item.enchantment.color);
+      }
+    }
+
+    // Right: enchantment picker
+    drawBox(42, 6, 57, 26, ' SELECT ENCHANTMENT ', '#a5f');
+    drawStr(44, 8, 'ENCHANTMENT        COST         BONUS', '#888');
+    drawBoxDivider(42, 9, 57, '#446');
+    for (let i = 0; i < enchants.length; i++) {
+      const e = enchants[i];
+      const selected = i === enchantEnchCursor;
+      const canAfford = STATE.gold >= 30 && (STATE.materials[e.material] || 0) >= 5;
+      const prefix = selected ? '> ' : '  ';
+      const color = selected ? '#fff' : (canAfford ? e.color : '#555');
+      drawStr(44, 10 + i * 2, `${prefix}${e.name.padEnd(17)} 5 ${e.material} + 30g`, color);
+      drawStr(46, 11 + i * 2, e.desc, '#888');
+    }
+  } else {
+    // Reroll tab
+    const items = getFilteredItems(getEnchantableItems());
+    drawBox(1, 6, 98, 26, ' REROLL STATS ', '#fa5');
+
+    if (items.length === 0) {
+      drawStr(3, 8, '(No items to reroll)', '#555');
+    }
+
+    if (enchantRerollConfirm && enchantRerollPreview) {
+      // Show comparison
+      const item = items[enchantRerollCursor];
+      drawStr(3, 8, `Rerolling: ${item.name}`, RARITY_COLORS[item.rarity]);
+      drawBoxDivider(1, 9, 98, '#553');
+      drawStr(3, 10, 'STAT        CURRENT     NEW', '#888');
+      let row = 12;
+      const stats = ['attack','defense','hp','critChance','attackSpeed'];
+      const labels = ['ATK','DEF','HP','CRIT','SPD'];
+      for (let s = 0; s < stats.length; s++) {
+        const cur = item[stats[s]] || 0;
+        const nw = enchantRerollPreview[stats[s]] || 0;
+        if (cur === 0 && nw === 0) continue;
+        const curStr = stats[s] === 'critChance' ? `${(cur*100).toFixed(1)}%` : (stats[s] === 'attackSpeed' ? cur.toFixed(2) : String(cur));
+        const nwStr = stats[s] === 'critChance' ? `${(nw*100).toFixed(1)}%` : (stats[s] === 'attackSpeed' ? nw.toFixed(2) : String(nw));
+        const changeColor = nw > cur ? '#5a5' : (nw < cur ? '#f55' : '#888');
+        drawStr(3, row, `${labels[s].padEnd(12)} ${curStr.padEnd(12)} ${nwStr}`, changeColor);
+        row++;
+      }
+      drawStr(3, row + 2, 'Accept? [Y] Yes  [N] No  [Esc] Cancel', '#ff0');
+    } else {
+      drawStr(3, 8, 'NAME                  TIER       COST', '#888');
+      drawBoxDivider(1, 9, 98, '#553');
+      for (let i = 0; i < Math.min(items.length, 12); i++) {
+        const item = items[i];
+        const materialNames = ['bone','iron','crystal','shadow','ember'];
+        const mat = materialNames[item.tier || 0];
+        const selected = i === enchantRerollCursor;
+        const canAfford = STATE.gold >= 20 && (STATE.materials[mat] || 0) >= 3;
+        const prefix = selected ? '> ' : '  ';
+        const color = selected ? '#fff' : (canAfford ? RARITY_COLORS[item.rarity] : '#555');
+        drawStr(3, 10 + i * 2, `${prefix}${item.name.padEnd(20)} T${item.tier || 0}         3 ${mat} + 20g`, color);
+        if (selected) {
+          let statStr = '';
+          if (item.attack) statStr += `ATK:${item.attack} `;
+          if (item.defense) statStr += `DEF:${item.defense} `;
+          if (item.hp) statStr += `HP:${item.hp} `;
+          if (item.critChance) statStr += `CRIT:${(item.critChance*100).toFixed(0)}% `;
+          if (item.attackSpeed) statStr += `SPD:${item.attackSpeed.toFixed(1)}`;
+          drawStr(5, 11 + i * 2, `Current: ${statStr}`, '#888');
+        }
+      }
+    }
+  }
+
+  drawFilterBar(33);
+  // Message overwrites filter bar when active
+  if (enchantMessageTimer > 0) {
+    drawStr(3, 33, enchantMessage, '#5f5');
+  }
+
+  drawBox(0, 34, 100, 3, null, '#555');
+  drawStr(3, 35, '1/2 tabs  Up/Down items  Left/Right enchants  Scroll  S/R/T filters  Esc', '#666');
 }
 
 // ============================================================
@@ -1279,21 +1819,23 @@ function drawShop() {
 let invCursor = 0;
 
 function updateInventory() {
-  if (wasPressed('Escape')) { STATE.scene = 'camp'; return; }
-  const totalItems = STATE.inventory.length;
-  if (totalItems === 0) return;
+  if (wasPressed('Escape')) { filterSort = 0; filterRarity = 0; filterSlot = 0; STATE.scene = 'camp'; return; }
+  handleFilterKeys(() => { invCursor = 0; });
+  const filtered = getFilteredItems(STATE.inventory);
+  const totalItems = filtered.length;
+  if (totalItems === 0) { getScroll(); return; }
+  if (invCursor >= totalItems) invCursor = Math.max(0, totalItems - 1);
   if (wasPressed('ArrowUp') && invCursor > 0) invCursor--;
   if (wasPressed('ArrowDown') && invCursor < totalItems - 1) invCursor++;
+  const scroll = getScroll();
+  if (scroll) invCursor = Math.max(0, Math.min(totalItems - 1, invCursor + scroll));
   if (wasPressed('Enter')) {
-    const item = STATE.inventory[invCursor];
+    const item = filtered[invCursor];
     if (!item) return;
-    // Unequip current
     const slot = item.slot;
     const current = STATE.equipped[slot];
     if (current) {
-      // Check if this is the same item (already equipped)
       if (current === item || (current.name === item.name && STATE.inventory.indexOf(current) === invCursor)) {
-        // Unequip
         STATE.equipped[slot] = null;
         return;
       }
@@ -1304,10 +1846,8 @@ function updateInventory() {
 }
 
 function drawInventory() {
-  // Title box (row 0-2)
   drawBox(0, 0, 100, 3, ' I N V E N T O R Y ', '#ddd');
 
-  // Left panel: HERO STATS (col 1, row 3, 35w, 17h)
   const stats = getHeroStats();
   drawBox(1, 3, 35, 17, ' HERO STATS ', '#fd0');
   drawStr(3, 5, `Max HP: ${stats.maxHp}`, '#5a5');
@@ -1320,7 +1860,9 @@ function drawInventory() {
   for (const slot of ['weapon','armor','accessory']) {
     const item = STATE.equipped[slot];
     const row = slot === 'weapon' ? 12 : slot === 'armor' ? 13 : 14;
-    drawStr(3, row, `${slot}: ${item ? item.name : '(none)'}`, item ? RARITY_COLORS[item.rarity] : '#555');
+    let name = item ? item.name : '(none)';
+    if (item && item.enchantment) name += ` [${item.enchantment.name}]`;
+    drawStr(3, row, `${slot}: ${name}`, item ? RARITY_COLORS[item.rarity] : '#555');
   }
   drawBoxDivider(1, 15, 35, '#553');
   drawStr(3, 16, `Gold: ${STATE.gold}`, '#fd0');
@@ -1330,32 +1872,36 @@ function drawInventory() {
   }
   if (matStrs.length > 0) drawStr(3, 17, matStrs.join(' '), '#888');
 
-  // Right panel: ITEMS (col 37, row 3, 62w, 17h)
+  const filtered = getFilteredItems(STATE.inventory);
+
   drawBox(37, 3, 62, 17, ' ITEMS ', '#8cf');
   drawStr(39, 4, 'NAME                         SLOT       RARITY', '#888');
   drawBoxDivider(37, 5, 62, '#446');
-  if (STATE.inventory.length === 0) {
+  if (filtered.length === 0) {
     drawStr(39, 7, '(empty)', '#555');
   }
   const maxVisible = 13;
   const startIdx = Math.max(0, invCursor - maxVisible + 1);
-  for (let i = startIdx; i < Math.min(STATE.inventory.length, startIdx + maxVisible); i++) {
-    const item = STATE.inventory[i];
+  for (let i = startIdx; i < Math.min(filtered.length, startIdx + maxVisible); i++) {
+    const item = filtered[i];
     const selected = i === invCursor;
     const equipped = STATE.equipped[item.slot] === item;
     const prefix = (selected ? '> ' : '  ') + (equipped ? '[E] ' : '    ');
     const color = selected ? '#fff' : RARITY_COLORS[item.rarity];
-    const nameStr = item.name.padEnd(25);
+    let nameStr = item.name;
+    if (item.enchantment) nameStr += '*';
+    nameStr = nameStr.padEnd(25);
     const slotStr = item.slot.padEnd(10);
     drawStr(39, 6 + (i - startIdx), `${prefix}${nameStr} ${slotStr} ${item.rarity}`, color);
   }
 
-  // Bottom panel: ITEM DETAILS (col 1, row 21, 98w, 12h)
   drawBox(1, 21, 98, 12, ' ITEM DETAILS ', '#888');
-  if (STATE.inventory.length > 0 && invCursor < STATE.inventory.length) {
-    const item = STATE.inventory[invCursor];
+  if (filtered.length > 0 && invCursor < filtered.length) {
+    const item = filtered[invCursor];
     drawStr(3, 23, item.name, RARITY_COLORS[item.rarity]);
-    drawStr(3, 24, `Slot: ${item.slot}    Rarity: ${item.rarity}`, '#888');
+    let subInfo = `Slot: ${item.slot}    Rarity: ${item.rarity}`;
+    if (item.upgradeLevel) subInfo += `    Upgrade: +${item.upgradeLevel}`;
+    drawStr(3, 24, subInfo, '#888');
     drawBoxDivider(1, 25, 98, '#555');
     let statStr = '';
     if (item.attack) statStr += `ATK+${item.attack}  `;
@@ -1364,14 +1910,17 @@ function drawInventory() {
     if (item.critChance) statStr += `CRIT+${(item.critChance*100).toFixed(0)}%  `;
     if (item.attackSpeed) statStr += `SPD+${item.attackSpeed.toFixed(1)}`;
     drawStr(3, 27, statStr, '#aaa');
+    if (item.enchantment) {
+      drawStr(3, 28, `Enchant: ${item.enchantment.name}`, item.enchantment.color);
+    }
     drawStr(3, 29, 'Enter to equip/unequip', '#666');
   } else {
     drawStr(3, 24, 'Select an item to view details', '#555');
   }
 
-  // Instructions box (row 34-36)
+  drawFilterBar(33);
   drawBox(0, 34, 100, 3, null, '#555');
-  drawStr(3, 35, 'Arrow keys to browse    Enter to equip/unequip    Escape to go back', '#666');
+  drawStr(3, 35, 'Arrows/Scroll to browse  Enter equip/unequip  S/R/T filters  Esc back', '#666');
 }
 
 // ============================================================
@@ -1390,7 +1939,6 @@ function drawGameOver() {
   drawStr(30, 13, `Gold penalty: halved to ${STATE.gold}`, '#fa5');
   drawStr(30, 14, 'Materials kept.', '#5a5');
 
-  // Loot still collected
   if (STATE.lootGold > 0) {
     drawStr(30, 16, `Gold found this run: ${STATE.lootGold} (kept)`, '#fd0');
     STATE.gold += STATE.lootGold;
@@ -1405,7 +1953,7 @@ function drawGameOver() {
 }
 
 // ============================================================
-// WIN SCENE (beat all 5 areas)
+// WIN SCENE
 // ============================================================
 function drawWinScreen() {
   drawBox(15, 4, 70, 28, ' CONGRATULATIONS ', '#fa5');
@@ -1430,7 +1978,8 @@ function gameLoop() {
     case 'camp': updateCamp(); drawCamp(); break;
     case 'areaSelect': updateAreaSelect(); drawAreaSelect(); break;
     case 'adventure': updateAdventure(); drawAdventure(); break;
-    case 'shop': updateShop(); drawShop(); break;
+    case 'forge': updateForge(); drawForge(); break;
+    case 'enchant': updateEnchant(); drawEnchant(); break;
     case 'inventory': updateInventory(); drawInventory(); break;
     case 'gameOver': updateGameOver(); drawGameOver(); break;
     case 'win': drawWinScreen(); break;
