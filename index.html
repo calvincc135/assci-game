@@ -109,7 +109,7 @@ function getScroll() { const d = scrollDelta; scrollDelta = 0; return d; }
 // Sort/Filter system
 const SORT_MODES = ['default', 'best', 'worst'];
 const FILTER_RARITIES = ['all', 'common', 'uncommon', 'rare', 'epic', 'legendary'];
-const FILTER_SLOTS = ['all', 'weapon', 'armor', 'accessory'];
+const FILTER_SLOTS = ['all', 'weapon', 'armor'];
 let filterSort = 0;
 let filterRarity = 0;
 let filterSlot = 0;
@@ -157,7 +157,7 @@ const STATE = {
   materials: { bone: 0, iron: 0, crystal: 0, shadow: 0, ember: 0 },
   unlockedAreas: 1,
   inventory: [],
-  equipped: { weapon: null, armor: null, accessory: null },
+  equipped: { weapon: null, armor: null },
   heroBaseStats: { maxHp: 50, attack: 5, defense: 2, critChance: 0.05, attackSpeed: 1.0 },
   currentArea: 0,
   wave: 0,
@@ -166,6 +166,7 @@ const STATE = {
   loot: [],
   lootGold: 0,
   lootMaterials: {},
+  discoveredRecipes: [],
   // EXP & Leveling
   exp: 0,
   level: 1,
@@ -198,7 +199,7 @@ function addExp(amount) {
 
 function getHeroStats() {
   const s = { ...STATE.heroBaseStats };
-  for (const slot of ['weapon', 'armor', 'accessory']) {
+  for (const slot of ['weapon', 'armor']) {
     const item = STATE.equipped[slot];
     if (item) {
       s.maxHp += item.hp || 0;
@@ -226,6 +227,7 @@ function saveGame() {
     unlockedAreas: STATE.unlockedAreas,
     inventory: STATE.inventory,
     equipped: STATE.equipped,
+    discoveredRecipes: STATE.discoveredRecipes,
     exp: STATE.exp,
     level: STATE.level,
     expToNext: STATE.expToNext,
@@ -243,7 +245,8 @@ function loadGame() {
     STATE.materials = d.materials || STATE.materials;
     STATE.unlockedAreas = d.unlockedAreas || 1;
     STATE.inventory = d.inventory || [];
-    STATE.equipped = d.equipped || { weapon: null, armor: null, accessory: null };
+    STATE.equipped = d.equipped || { weapon: null, armor: null };
+    STATE.discoveredRecipes = d.discoveredRecipes || [];
     STATE.exp = d.exp || 0;
     STATE.level = d.level || 1;
     STATE.expToNext = d.expToNext || getExpForLevel(STATE.level);
@@ -264,7 +267,7 @@ const AREAS = [
       { name: 'Skeleton', type: 'melee', sprite: [' O ','/†\\','/ \\'], walkSprite: [' O ','/†\\','/> '], attackSprite: [' O ','_†--','/ \\'], color: '#cba', hp: 20, attack: 4, defense: 1, speed: 0.8 },
       { name: 'Dire Rat', type: 'melee', sprite: ['/\\_/\\','( o.o)','> ‡ <'], walkSprite: ['/\\_/\\','( o.o)','>  ‡<'], attackSprite: ['/\\_/\\','(>o.o)>','> ‡ <'], color: '#987', hp: 15, attack: 5, defense: 0, speed: 1.2 }
     ],
-    boss: { name: 'Bone Knight', type: 'melee', sprite: ['  [†]  ',' /###\\ ','/ |‡| \\','  | |  ','  d b  '], walkSprite: ['  [†]  ',' /###\\ ','/ |‡| \\','  | |  ','  d  b '], attackSprite: ['  [†]  ',' /###\\ ','--|‡| \\','  | |  ','  d b  '], color: '#fed', hp: 80, attack: 8, defense: 4, speed: 0.7 },
+    boss: { name: 'Bone Knight', type: 'melee', sprite: ['  [†]  ',' /###\\ ','/ |‡| \\','  | |  ','  d b  '], walkSprite: ['  [†]  ',' /###\\ ','/ |‡| \\','  | |  ','  d  b '], attackSprite: ['  [†]  ',' /###\\ ','--|‡| \\','  | |  ','  d b  '], color: '#fed', hp: 20, attack: 8, defense: 4, speed: 0.7 },
     landscape: { mountains: '/\\/\\_/\\', trees: '  +  \n /|\\ \n  |  ', ground: '...,,,___...,,,...' }
   },
   {
@@ -321,29 +324,65 @@ const AREAS = [
 // ============================================================
 // EQUIPMENT DATA
 // ============================================================
-const RARITY_COLORS = { common: '#aaa', uncommon: '#5a5', rare: '#55f', epic: '#a5f', legendary: '#fa5' };
-const RARITIES = ['common','uncommon','rare','epic','legendary'];
+const RARITY_COLORS = { common: '#aaa', uncommon: '#5a5', rare: '#55f', epic: '#a5f', legendary: '#fa5', 'lost relic': '#864' };
+const RARITIES = ['common','uncommon','rare','epic','legendary','lost relic'];
+function getRarityColor(rarity) {
+  if (rarity === 'lost relic') {
+    const t = (Math.sin(Date.now() * 0.003) + 1) / 2;
+    const r = Math.round(0x88 + t * (0xff - 0x88));
+    const g = Math.round(0x66 + t * (0xdd - 0x66));
+    const b = Math.round(0x44 + t * (0x00 - 0x44));
+    return '#' + r.toString(16).padStart(2,'0') + g.toString(16).padStart(2,'0') + b.toString(16).padStart(2,'0');
+  }
+  return RARITY_COLORS[rarity] || '#aaa';
+}
 
 const EQUIPMENT_TABLE = [
-  { name: 'Bone Sword', slot: 'weapon', tier: 0, rarity: 'common', attack: 3, defense: 0, hp: 0, critChance: 0.02, attackSpeed: 0, cost: 15 },
+  { name: 'Bone Sword', slot: 'weapon', weaponType: 'melee', tier: 0, rarity: 'common', attack: 3, defense: 0, hp: 0, critChance: 0.02, attackSpeed: 0, cost: 15 },
+  { name: 'Bone Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 0, rarity: 'common', attack: 2, defense: 0, hp: 0, critChance: 0.05, attackSpeed: -0.2, cost: 15 },
   { name: 'Bone Shield', slot: 'armor', tier: 0, rarity: 'common', attack: 0, defense: 3, hp: 10, critChance: 0, attackSpeed: 0, cost: 15 },
-  { name: 'Rat Tooth Charm', slot: 'accessory', tier: 0, rarity: 'common', attack: 1, defense: 0, hp: 5, critChance: 0.05, attackSpeed: 0.1, cost: 12 },
-  { name: 'Iron Blade', slot: 'weapon', tier: 1, rarity: 'uncommon', attack: 6, defense: 0, hp: 0, critChance: 0.03, attackSpeed: 0.1, cost: 35 },
+  { name: 'Iron Blade', slot: 'weapon', weaponType: 'melee', tier: 1, rarity: 'uncommon', attack: 6, defense: 0, hp: 0, critChance: 0.03, attackSpeed: 0.1, cost: 35 },
+  { name: 'Iron Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 1, rarity: 'uncommon', attack: 4, defense: 0, hp: 0, critChance: 0.06, attackSpeed: -0.1, cost: 35 },
   { name: 'Iron Plate', slot: 'armor', tier: 1, rarity: 'uncommon', attack: 0, defense: 6, hp: 20, critChance: 0, attackSpeed: -0.1, cost: 35 },
-  { name: 'Goblin Earring', slot: 'accessory', tier: 1, rarity: 'uncommon', attack: 2, defense: 1, hp: 10, critChance: 0.05, attackSpeed: 0.15, cost: 30 },
-  { name: 'Crystal Saber', slot: 'weapon', tier: 2, rarity: 'rare', attack: 10, defense: 0, hp: 5, critChance: 0.08, attackSpeed: 0.15, cost: 60 },
+  { name: 'Crystal Saber', slot: 'weapon', weaponType: 'melee', tier: 2, rarity: 'rare', attack: 10, defense: 0, hp: 5, critChance: 0.08, attackSpeed: 0.15, cost: 60 },
+  { name: 'Crystal Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 2, rarity: 'rare', attack: 7, defense: 0, hp: 0, critChance: 0.12, attackSpeed: -0.05, cost: 60 },
   { name: 'Crystal Mail', slot: 'armor', tier: 2, rarity: 'rare', attack: 0, defense: 10, hp: 35, critChance: 0, attackSpeed: 0, cost: 60 },
-  { name: 'Prism Pendant', slot: 'accessory', tier: 2, rarity: 'rare', attack: 4, defense: 2, hp: 15, critChance: 0.1, attackSpeed: 0.1, cost: 55 },
-  { name: 'Shadow Fang', slot: 'weapon', tier: 3, rarity: 'epic', attack: 15, defense: 0, hp: 0, critChance: 0.12, attackSpeed: 0.2, cost: 100 },
+  { name: 'Shadow Fang', slot: 'weapon', weaponType: 'melee', tier: 3, rarity: 'epic', attack: 15, defense: 0, hp: 0, critChance: 0.12, attackSpeed: 0.2, cost: 100 },
+  { name: 'Shadow Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 3, rarity: 'epic', attack: 11, defense: 0, hp: 0, critChance: 0.15, attackSpeed: 0, cost: 100 },
   { name: 'Treant Bark', slot: 'armor', tier: 3, rarity: 'epic', attack: 0, defense: 14, hp: 50, critChance: 0, attackSpeed: 0, cost: 100 },
-  { name: 'Wraith Ring', slot: 'accessory', tier: 3, rarity: 'epic', attack: 6, defense: 3, hp: 20, critChance: 0.1, attackSpeed: 0.2, cost: 90 },
-  { name: 'Ember Blade', slot: 'weapon', tier: 4, rarity: 'legendary', attack: 22, defense: 0, hp: 10, critChance: 0.15, attackSpeed: 0.25, cost: 180 },
+  { name: 'Ember Blade', slot: 'weapon', weaponType: 'melee', tier: 4, rarity: 'legendary', attack: 22, defense: 0, hp: 10, critChance: 0.15, attackSpeed: 0.25, cost: 180 },
+  { name: 'Ember Crossbow', slot: 'weapon', weaponType: 'ranged', tier: 4, rarity: 'legendary', attack: 16, defense: 0, hp: 0, critChance: 0.2, attackSpeed: 0.05, cost: 180 },
   { name: 'Molten Aegis', slot: 'armor', tier: 4, rarity: 'legendary', attack: 2, defense: 20, hp: 70, critChance: 0, attackSpeed: 0, cost: 180 },
-  { name: 'Ember Crown', slot: 'accessory', tier: 4, rarity: 'legendary', attack: 8, defense: 5, hp: 30, critChance: 0.12, attackSpeed: 0.2, cost: 160 }
+  // Repeating Crossbows (combo crafted)
+  { name: 'Bone Repeater', slot: 'weapon', weaponType: 'ranged', tier: 0, rarity: 'uncommon', attack: 3, defense: 0, hp: 0, critChance: 0.04, attackSpeed: 0.1, cost: 0, combo: true },
+  { name: 'Iron Repeater', slot: 'weapon', weaponType: 'ranged', tier: 1, rarity: 'rare', attack: 5, defense: 0, hp: 0, critChance: 0.05, attackSpeed: 0.15, cost: 0, combo: true },
+  { name: 'Crystal Repeater', slot: 'weapon', weaponType: 'ranged', tier: 2, rarity: 'epic', attack: 9, defense: 0, hp: 5, critChance: 0.1, attackSpeed: 0.2, cost: 0, combo: true },
+  { name: 'Shadow Repeater', slot: 'weapon', weaponType: 'ranged', tier: 3, rarity: 'legendary', attack: 13, defense: 0, hp: 0, critChance: 0.13, attackSpeed: 0.25, cost: 0, combo: true },
+  { name: 'Ember Repeater', slot: 'weapon', weaponType: 'ranged', tier: 4, rarity: 'legendary', attack: 19, defense: 0, hp: 5, critChance: 0.17, attackSpeed: 0.3, cost: 0, combo: true },
+  { name: 'Ouroboros Stone', slot: 'weapon', weaponType: 'melee', tier: 0, rarity: 'lost relic', attack: 1, defense: 1, hp: 5, critChance: 0.03, attackSpeed: 0.05, cost: 0, combo: true }
 ];
 
+const COMBO_RECIPES = [
+  { result: 'Bone Repeater', ingredients: ['Bone Crossbow', 'Bone Sword'], tier: 0 },
+  { result: 'Iron Repeater', ingredients: ['Iron Crossbow', 'Iron Blade'], tier: 1 },
+  { result: 'Crystal Repeater', ingredients: ['Crystal Crossbow', 'Crystal Saber'], tier: 2 },
+  { result: 'Shadow Repeater', ingredients: ['Shadow Crossbow', 'Shadow Fang'], tier: 3 },
+  { result: 'Ember Repeater', ingredients: ['Ember Crossbow', 'Ember Blade'], tier: 4 }
+];
+
+function getAvailableComboRecipes() {
+  return COMBO_RECIPES.filter(combo => {
+    return combo.ingredients.every(ingName => {
+      return STATE.inventory.some(item => {
+        const baseName = item.name.replace(/ \+\d$/, '');
+        return baseName === ingName && item !== STATE.equipped.weapon && item !== STATE.equipped.armor;
+      });
+    });
+  });
+}
+
 function generateDrop(areaTier) {
-  const pool = EQUIPMENT_TABLE.filter(e => e.tier <= areaTier);
+  const pool = EQUIPMENT_TABLE.filter(e => e.tier <= areaTier && !e.combo);
   const weighted = [];
   for (const item of pool) {
     const weight = item.tier === areaTier ? 4 : 1;
@@ -452,10 +491,31 @@ function drawCampfire(cx, cy) {
 // ============================================================
 // HERO SPRITE
 // ============================================================
-const HERO_IDLE = [' O ','/|\\','/ \\'];
-const HERO_WALK = [' O ','/|\\','/ >'];
-const HERO_ATTACK = [' O ','_|--','/ \\'];
+// Hero sprite sets based on equipment
+const HERO_SPRITES = {
+  unarmed:    { idle: [' O ','/|\\','/ \\'], walk: [' O ','/|\\','/ >'], attack: [' O ','_|--','/ \\'] },
+  sword:      { idle: [' O ','/|\u2020','/ \\'], walk: [' O ','/|\u2020','/ >'], attack: [' O ','_|\u2020-','/ \\'] },
+  crossbow:   { idle: [' O ','/|}','/ \\'], walk: [' O ','/|}','/ >'], attack: [' O ','_|}=','/ \\'] },
+  sword_shield:    { idle: [' O ','\u2021|\u2020','/ \\'], walk: [' O ','\u2021|\u2020','/ >'], attack: [' O ','\u2021|\u2020-','/ \\'] },
+  crossbow_shield: { idle: [' O ','\u2021|}','/ \\'], walk: [' O ','\u2021|}','/ >'], attack: [' O ','\u2021|}=','/ \\'] },
+  shield_only:     { idle: [' O ','\u2021|\\','/ \\'], walk: [' O ','\u2021|\\','/ >'], attack: [' O ','\u2021|--','/ \\'] }
+};
 const HERO_COLOR = '#8cf';
+
+function getHeroSpriteSet() {
+  const wep = STATE.equipped.weapon;
+  const arm = STATE.equipped.armor;
+  const hasShield = !!arm;
+  if (wep) {
+    if (wep.weaponType === 'ranged') {
+      return hasShield ? HERO_SPRITES.crossbow_shield : HERO_SPRITES.crossbow;
+    } else {
+      return hasShield ? HERO_SPRITES.sword_shield : HERO_SPRITES.sword;
+    }
+  } else {
+    return hasShield ? HERO_SPRITES.shield_only : HERO_SPRITES.unarmed;
+  }
+}
 
 function drawSprite(sprite, col, row, color) {
   for (let i = 0; i < sprite.length; i++) {
@@ -521,11 +581,11 @@ function drawCamp() {
   drawStr(3, 14, `SPD:  ${stats.attackSpeed.toFixed(1)}`, '#adf');
   drawBoxDivider(1, 15, 28, '#553');
   drawStr(3, 16, 'Equipped:', '#aaa');
-  for (const slot of ['weapon','armor','accessory']) {
+  for (const slot of ['weapon','armor']) {
     const item = STATE.equipped[slot];
-    const row = slot === 'weapon' ? 17 : slot === 'armor' ? 18 : 19;
+    const row = slot === 'weapon' ? 17 : 18;
     const name = item ? item.name : '(none)';
-    drawStr(3, row, `${slot}: ${name}`, item ? RARITY_COLORS[item.rarity] : '#555');
+    drawStr(3, row, `${slot}: ${name}`, item ? getRarityColor(item.rarity) : '#555');
   }
   drawBoxDivider(1, 20, 28, '#553');
   drawStr(3, 21, 'Materials:', '#aaa');
@@ -557,7 +617,8 @@ function drawCamp() {
     }
   }
   const hx = 44, hy = 16;
-  const heroFrame = campFrame % 60 < 30 ? HERO_IDLE : HERO_WALK;
+  const campSpriteSet = getHeroSpriteSet();
+  const heroFrame = campFrame % 60 < 30 ? campSpriteSet.idle : campSpriteSet.walk;
   drawSprite(heroFrame, hx, hy, HERO_COLOR);
   drawCampfire(hx + 8, hy);
 
@@ -701,7 +762,11 @@ function initAdventure() {
     chestItem: null,
     chestGold: 0,
     chestMaterials: {},
-    showChest: false
+    showChest: false,
+    // Auto-farm & pause
+    paused: false,
+    autoFarmTimer: 0,
+    loopCount: advState ? (advState.loopCount || 0) : 0
   };
   spawnWave();
 }
@@ -805,6 +870,17 @@ function handleEnemyDeath(target) {
     const matCount = 2 + Math.floor(Math.random() * 2);
     advState.chestMaterials = {};
     advState.chestMaterials[mat] = matCount;
+    // Recipe scroll drop (50% chance)
+    advState.chestRecipe = null;
+    if (Math.random() < 0.5) {
+      const tier = STATE.currentArea;
+      const undiscovered = EQUIPMENT_TABLE.filter(e => e.tier === tier && !e.combo && !STATE.discoveredRecipes.includes(e.name));
+      if (undiscovered.length > 0) {
+        const recipe = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+        STATE.discoveredRecipes.push(recipe.name);
+        advState.chestRecipe = recipe.name;
+      }
+    }
     advState.showChest = true;
   }
 }
@@ -862,6 +938,23 @@ function updateHeroProjectiles() {
 }
 
 function updateAdventure() {
+  // Pause menu (Escape key)
+  if (wasPressed('Escape') && advState.phase !== 'victory') {
+    advState.paused = !advState.paused;
+  }
+  if (advState.paused) {
+    if (wasPressed('Enter')) {
+      // Collect loot earned so far and exit to camp
+      for (const item of STATE.loot) STATE.inventory.push(item);
+      STATE.gold += STATE.lootGold;
+      for (const m in STATE.lootMaterials) STATE.materials[m] = (STATE.materials[m] || 0) + STATE.lootMaterials[m];
+      saveGame();
+      heroProjectiles = [];
+      STATE.scene = 'camp';
+    }
+    return;
+  }
+
   advState.frame++;
   const stats = getHeroStats();
 
@@ -904,7 +997,8 @@ function updateAdventure() {
 
   // Chest screen after boss kill
   if (advState.phase === 'chest') {
-    if (wasPressed('Enter')) {
+    const autoCollect = STATE.inventory.some(item => item.name === 'Ouroboros Stone');
+    if (wasPressed('Enter') || autoCollect) {
       // Collect chest contents
       if (advState.chestItem) {
         STATE.loot.push(advState.chestItem);
@@ -921,16 +1015,43 @@ function updateAdventure() {
   }
 
   if (advState.phase === 'victory') {
-    if (wasPressed('Enter')) {
-      for (const item of STATE.loot) STATE.inventory.push(item);
-      STATE.gold += STATE.lootGold;
-      for (const m in STATE.lootMaterials) STATE.materials[m] = (STATE.materials[m] || 0) + STATE.lootMaterials[m];
-      if (STATE.currentArea + 1 >= STATE.unlockedAreas && STATE.unlockedAreas < 5) {
-        STATE.unlockedAreas++;
+    const hasOuroboros = STATE.inventory.some(item => item.name === 'Ouroboros Stone');
+    if (hasOuroboros) {
+      // Auto-farm: collect loot and restart after delay
+      advState.autoFarmTimer++;
+      if (advState.autoFarmTimer === 1) {
+        // Collect loot on first frame of victory
+        for (const item of STATE.loot) STATE.inventory.push(item);
+        STATE.gold += STATE.lootGold;
+        for (const m in STATE.lootMaterials) STATE.materials[m] = (STATE.materials[m] || 0) + STATE.lootMaterials[m];
+        if (STATE.currentArea + 1 >= STATE.unlockedAreas && STATE.unlockedAreas < 5) {
+          STATE.unlockedAreas++;
+        }
+        saveGame();
       }
-      saveGame();
-      heroProjectiles = [];
-      STATE.scene = 'camp';
+      if (advState.autoFarmTimer >= 120) {
+        const loop = advState.loopCount + 1;
+        heroProjectiles = [];
+        initAdventure();
+        advState.loopCount = loop;
+        spawnWave();
+      }
+      // Allow escape to pause during auto-farm countdown
+      if (wasPressed('Escape')) {
+        advState.paused = true;
+      }
+    } else {
+      if (wasPressed('Enter')) {
+        for (const item of STATE.loot) STATE.inventory.push(item);
+        STATE.gold += STATE.lootGold;
+        for (const m in STATE.lootMaterials) STATE.materials[m] = (STATE.materials[m] || 0) + STATE.lootMaterials[m];
+        if (STATE.currentArea + 1 >= STATE.unlockedAreas && STATE.unlockedAreas < 5) {
+          STATE.unlockedAreas++;
+        }
+        saveGame();
+        heroProjectiles = [];
+        STATE.scene = 'camp';
+      }
     }
     return;
   }
@@ -949,32 +1070,82 @@ function updateAdventure() {
     if (hasAlive) {
       advState.heroAttackAnim = 36;
       const isCrit = Math.random() < stats.critChance;
-      // Use lowest-defense alive enemy for base damage calc
-      let minDef = 999;
-      for (const e of advState.enemies) {
-        if (e.alive && e.defense < minDef) minDef = e.defense;
-      }
-      let dmg = Math.max(1, stats.attack - minDef);
-      if (isCrit) dmg *= 2;
+      const heroWeaponType = STATE.equipped.weapon?.weaponType || 'melee';
 
-      // Spawn projectile
-      heroProjectiles.push({
-        x: advState.heroCol + 3,
-        y: advState.heroRow,
-        vx: 2.0,
-        vy: 0,
-        dmg,
-        isCrit,
-        pierceLeft: 3,
-        hitEnemies: new Set()
-      });
+      if (heroWeaponType === 'ranged') {
+        // Ranged: spawn projectile (existing behavior)
+        let minDef = 999;
+        for (const e of advState.enemies) {
+          if (e.alive && e.defense < minDef) minDef = e.defense;
+        }
+        let dmg = Math.max(1, stats.attack - minDef);
+        if (isCrit) dmg *= 2;
 
-      // Slash launch particles
-      const slashChars = ['/', '|', '\\'];
-      for (let i = 0; i < 4; i++) {
-        const ch = slashChars[i % slashChars.length];
-        addParticle(advState.heroCol + 3 + i * 1.5, advState.heroRow - 1 + i * 0.5,
-          ch, '#fff', 1.0, (i - 1.5) * 0.15, 10);
+        heroProjectiles.push({
+          x: advState.heroCol + 3,
+          y: advState.heroRow,
+          vx: 2.0,
+          vy: 0,
+          dmg,
+          isCrit,
+          pierceLeft: 3,
+          hitEnemies: new Set()
+        });
+
+        // Arrow launch particles
+        for (let i = 0; i < 3; i++) {
+          addParticle(advState.heroCol + 3 + i, advState.heroRow + 1,
+            '-', '#fff', 1.5, (Math.random()-0.5) * 0.1, 8);
+        }
+      } else {
+        // Melee: hit nearest alive enemy within MELEE_RANGE directly
+        let nearest = null;
+        let nearestDist = Infinity;
+        for (const e of advState.enemies) {
+          if (!e.alive) continue;
+          const dist = e.col - advState.heroCol;
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = e;
+          }
+        }
+        if (nearest && nearestDist <= MELEE_RANGE + 3) {
+          let dmg = Math.max(1, stats.attack - nearest.defense);
+          if (isCrit) dmg *= 2;
+          nearest.currentHp -= dmg;
+          nearest.hitFlash = 9;
+
+          if (isCrit) {
+            addFloatingText(nearest.col, nearest.row - 1, 'CRIT! ' + String(dmg), '#ff0');
+            for (let j = 0; j < 8; j++) {
+              const angle = (j / 8) * Math.PI * 2;
+              addParticle(nearest.col + 2, nearest.row + 1,
+                '*', '#ff0', Math.cos(angle) * 0.5, Math.sin(angle) * 0.3, 14);
+            }
+          } else {
+            addFloatingText(nearest.col, nearest.row - 1, String(dmg), '#fff');
+          }
+
+          if (nearest.currentHp <= 0) {
+            handleEnemyDeath(nearest);
+          }
+
+          // Slash particles at enemy position
+          const slashChars = ['/', '|', '\\', '*'];
+          for (let i = 0; i < 5; i++) {
+            const ch = slashChars[i % slashChars.length];
+            addParticle(nearest.col + Math.random()*3, nearest.row + Math.random()*2,
+              ch, '#fff', (Math.random()-0.5)*0.5, (Math.random()-0.5)*0.3, 12);
+          }
+        } else if (nearest) {
+          // Out of melee range — show a swing but no hit, walk closer next frame
+          const slashChars = ['/', '|', '\\'];
+          for (let i = 0; i < 3; i++) {
+            const ch = slashChars[i % slashChars.length];
+            addParticle(advState.heroCol + 3 + i, advState.heroRow - 1 + i * 0.5,
+              ch, '#888', 0.5, (i - 1) * 0.15, 8);
+          }
+        }
       }
     }
   }
@@ -1087,12 +1258,13 @@ function drawAdventure() {
   drawLandscape(area);
 
   // Hero
-  let heroSprite = HERO_IDLE;
+  const heroSpriteSet = getHeroSpriteSet();
+  let heroSprite = heroSpriteSet.idle;
   let heroColor = HERO_COLOR;
   if (advState.phase === 'walking') {
-    heroSprite = advState.walkCycle % 40 < 20 ? HERO_WALK : HERO_IDLE; // 2x slower (was %20 <10)
+    heroSprite = advState.walkCycle % 40 < 20 ? heroSpriteSet.walk : heroSpriteSet.idle;
   }
-  if (advState.heroAttackAnim > 0) heroSprite = HERO_ATTACK;
+  if (advState.heroAttackAnim > 0) heroSprite = heroSpriteSet.attack;
   if (advState.heroHitFlash > 0 && advState.heroHitFlash % 2 === 0) heroColor = '#f33';
   drawSprite(heroSprite, advState.heroCol, advState.heroRow, heroColor);
 
@@ -1189,7 +1361,7 @@ function drawAdventure() {
 
     let cy = 18;
     if (advState.chestItem) {
-      drawStr(30, cy, `Equipment: ${advState.chestItem.name}`, RARITY_COLORS[advState.chestItem.rarity]);
+      drawStr(30, cy, `Equipment: ${advState.chestItem.name}`, getRarityColor(advState.chestItem.rarity));
       cy++;
       let statStr = '';
       if (advState.chestItem.attack) statStr += `ATK+${advState.chestItem.attack} `;
@@ -1206,27 +1378,60 @@ function drawAdventure() {
       drawStr(30, cy, `${m}: +${advState.chestMaterials[m]}`, '#aaa');
       cy++;
     }
+    if (advState.chestRecipe) {
+      drawStr(30, cy, `Recipe Scroll: ${advState.chestRecipe}!`, '#ff0');
+      cy++;
+    }
     drawStr(30, Math.min(cy + 1, 27), 'Press Enter to continue', '#888');
   }
 
   // Victory screen
   if (advState.phase === 'victory') {
-    drawBox(20, 6, 60, 24, ' V I C T O R Y ', '#fd0');
-    drawStr(35, 9, 'V I C T O R Y !', '#fd0');
-    drawStr(30, 12, `Gold earned: ${STATE.lootGold}`, '#fd0');
-    let y = 14;
-    for (const m in STATE.lootMaterials) {
-      drawStr(30, y, `${m}: +${STATE.lootMaterials[m]}`, '#aaa');
-      y++;
-    }
-    if (STATE.loot.length > 0) {
-      drawStr(30, y + 1, 'Equipment found:', '#ddd');
-      for (let i = 0; i < STATE.loot.length; i++) {
-        const item = STATE.loot[i];
-        drawStr(32, y + 2 + i, item.name, RARITY_COLORS[item.rarity]);
+    const hasOuroboros = STATE.inventory.some(item => item.name === 'Ouroboros Stone');
+    if (hasOuroboros) {
+      drawBox(20, 6, 60, 24, ' V I C T O R Y ', '#fd0');
+      drawStr(35, 9, 'Ouroboros Stone', getRarityColor('lost relic'));
+      drawStr(32, 11, `Auto-farming... Loop ${advState.loopCount + 1}`, '#fa5');
+      drawStr(30, 13, `Gold earned: ${STATE.lootGold}`, '#fd0');
+      let y = 15;
+      for (const m in STATE.lootMaterials) {
+        drawStr(30, y, `${m}: +${STATE.lootMaterials[m]}`, '#aaa');
+        y++;
       }
+      if (STATE.loot.length > 0) {
+        drawStr(30, y + 1, 'Equipment found:', '#ddd');
+        for (let i = 0; i < STATE.loot.length; i++) {
+          const item = STATE.loot[i];
+          drawStr(32, y + 2 + i, item.name, getRarityColor(item.rarity));
+        }
+      }
+      drawStr(30, Math.min(y + 4 + STATE.loot.length, 27), 'Press Escape to pause', '#888');
+    } else {
+      drawBox(20, 6, 60, 24, ' V I C T O R Y ', '#fd0');
+      drawStr(35, 9, 'V I C T O R Y !', '#fd0');
+      drawStr(30, 12, `Gold earned: ${STATE.lootGold}`, '#fd0');
+      let y = 14;
+      for (const m in STATE.lootMaterials) {
+        drawStr(30, y, `${m}: +${STATE.lootMaterials[m]}`, '#aaa');
+        y++;
+      }
+      if (STATE.loot.length > 0) {
+        drawStr(30, y + 1, 'Equipment found:', '#ddd');
+        for (let i = 0; i < STATE.loot.length; i++) {
+          const item = STATE.loot[i];
+          drawStr(32, y + 2 + i, item.name, getRarityColor(item.rarity));
+        }
+      }
+      drawStr(30, Math.min(y + 4 + STATE.loot.length, 27), 'Press Enter to return to camp', '#888');
     }
-    drawStr(30, Math.min(y + 4 + STATE.loot.length, 27), 'Press Enter to return to camp', '#888');
+  }
+
+  // Pause overlay
+  if (advState.paused) {
+    drawBox(30, 12, 40, 12, ' PAUSED ', '#fa5');
+    drawStr(43, 15, 'P A U S E D', '#fa5');
+    drawStr(36, 18, 'Press Escape to resume', '#aaa');
+    drawStr(36, 20, 'Press Enter to exit to menu', '#fd0');
   }
 
   // Bottom stats bar
@@ -1234,8 +1439,7 @@ function drawAdventure() {
   drawStr(2, 35, `Lv${STATE.level} ATK:${stats.attack} DEF:${stats.defense} SPD:${stats.attackSpeed.toFixed(1)} CRIT:${(stats.critChance*100).toFixed(0)}%`, '#888');
   const wep = STATE.equipped.weapon;
   const arm = STATE.equipped.armor;
-  const acc = STATE.equipped.accessory;
-  drawStr(55, 35, `W:${wep ? wep.name : '-'}  A:${arm ? arm.name : '-'}  R:${acc ? acc.name : '-'}`, '#666');
+  drawStr(55, 35, `W:${wep ? wep.name : '-'}  S:${arm ? arm.name : '-'}`, '#666');
 }
 
 function drawLandscape(area) {
@@ -1375,7 +1579,8 @@ function drawLandscape(area) {
 // ============================================================
 // FORGE SCENE
 // ============================================================
-let forgeTab = 0; // 0=craft, 1=upgrade
+let forgeTab = 0; // 0=craft, 1=upgrade, 2=experiment
+let experimentMaterialCursor = 0;
 let forgeCursor = 0;
 let forgeUpgradeCursor = 0;
 let forgeMessage = '';
@@ -1385,13 +1590,14 @@ function initForge() {
   forgeTab = 0;
   forgeCursor = 0;
   forgeUpgradeCursor = 0;
+  experimentMaterialCursor = 0;
   forgeMessage = '';
   forgeMessageTimer = 0;
 }
 
 function getForgeRecipes() {
   const maxTier = Math.min(STATE.unlockedAreas - 1, 4);
-  return EQUIPMENT_TABLE.filter(e => e.tier <= maxTier);
+  return EQUIPMENT_TABLE.filter(e => e.tier <= maxTier && !e.combo && STATE.discoveredRecipes.includes(e.name));
 }
 
 function getUpgradeableItems() {
@@ -1417,30 +1623,115 @@ function updateForge() {
   if (wasPressed('Escape')) { filterSort = 0; filterRarity = 0; filterSlot = 0; STATE.scene = 'camp'; return; }
   if (wasPressed('1')) { forgeTab = 0; forgeCursor = 0; filterSort = 0; filterRarity = 0; filterSlot = 0; }
   if (wasPressed('2')) { forgeTab = 1; forgeUpgradeCursor = 0; }
+  if (wasPressed('3')) { forgeTab = 2; experimentMaterialCursor = 0; }
 
-  if (forgeTab === 0) {
-    // Craft tab — no filters (recipes, not inventory)
-    const recipes = getForgeRecipes();
-    if (recipes.length === 0) { getScroll(); return; }
-    if (wasPressed('ArrowUp') && forgeCursor > 0) forgeCursor--;
-    if (wasPressed('ArrowDown') && forgeCursor < recipes.length - 1) forgeCursor++;
-    const scroll = getScroll();
-    if (scroll) forgeCursor = Math.max(0, Math.min(recipes.length - 1, forgeCursor + scroll));
+  if (forgeTab === 2) {
+    // Experiment tab
+    const materialNames = ['bone','iron','crystal','shadow','ember'];
+    const availableMats = materialNames.filter((m, i) => i < STATE.unlockedAreas);
+    if (availableMats.length === 0) { getScroll(); return; }
+    if (experimentMaterialCursor >= availableMats.length) experimentMaterialCursor = availableMats.length - 1;
+    if (wasPressed('ArrowUp') && experimentMaterialCursor > 0) experimentMaterialCursor--;
+    if (wasPressed('ArrowDown') && experimentMaterialCursor < availableMats.length - 1) experimentMaterialCursor++;
+    getScroll();
     if (wasPressed('Enter')) {
-      const recipe = recipes[forgeCursor];
-      if (!recipe) return;
-      const cost = FORGE_MATERIAL_COSTS[recipe.tier];
+      const mat = availableMats[experimentMaterialCursor];
+      const tier = materialNames.indexOf(mat);
+      const cost = FORGE_MATERIAL_COSTS[tier];
       if (STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount) {
-        STATE.gold -= cost.gold;
-        STATE.materials[cost.material] -= cost.amount;
-        const newItem = { ...recipe, upgradeLevel: 0 };
-        STATE.inventory.push(newItem);
-        forgeMessage = `Crafted ${recipe.name}!`;
-        forgeMessageTimer = 60;
-        saveGame();
+        // Find undiscovered recipes of this tier (non-combo)
+        const undiscovered = EQUIPMENT_TABLE.filter(e => e.tier === tier && !e.combo && !STATE.discoveredRecipes.includes(e.name));
+        if (undiscovered.length === 0) {
+          forgeMessage = 'All recipes of this tier already discovered!';
+          forgeMessageTimer = 60;
+          return;
+        }
+        const successRate = 0.6;
+        if (Math.random() < successRate) {
+          // Success: discover and craft
+          const recipe = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+          STATE.gold -= cost.gold;
+          STATE.materials[cost.material] -= cost.amount;
+          STATE.discoveredRecipes.push(recipe.name);
+          const newItem = { ...recipe, upgradeLevel: 0 };
+          STATE.inventory.push(newItem);
+          forgeMessage = `Discovery! Learned and crafted ${recipe.name}!`;
+          forgeMessageTimer = 90;
+          saveGame();
+        } else {
+          // Failure: lose half materials
+          const halfMat = Math.ceil(cost.amount / 2);
+          const halfGold = Math.ceil(cost.gold / 2);
+          STATE.materials[cost.material] -= halfMat;
+          STATE.gold -= halfGold;
+          forgeMessage = 'The experiment failed... Some materials lost.';
+          forgeMessageTimer = 90;
+          saveGame();
+        }
       } else {
         forgeMessage = 'Not enough resources!';
         forgeMessageTimer = 60;
+      }
+    }
+    return;
+  }
+
+  if (forgeTab === 0) {
+    // Craft tab — discovered recipes + combo recipes
+    const recipes = getForgeRecipes();
+    const combos = getAvailableComboRecipes();
+    const totalEntries = recipes.length + combos.length;
+    if (totalEntries === 0) { getScroll(); return; }
+    if (forgeCursor >= totalEntries) forgeCursor = Math.max(0, totalEntries - 1);
+    if (wasPressed('ArrowUp') && forgeCursor > 0) forgeCursor--;
+    if (wasPressed('ArrowDown') && forgeCursor < totalEntries - 1) forgeCursor++;
+    const scroll = getScroll();
+    if (scroll) forgeCursor = Math.max(0, Math.min(totalEntries - 1, forgeCursor + scroll));
+    if (wasPressed('Enter')) {
+      if (forgeCursor < recipes.length) {
+        // Normal recipe craft
+        const recipe = recipes[forgeCursor];
+        if (!recipe) return;
+        const cost = FORGE_MATERIAL_COSTS[recipe.tier];
+        if (STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount) {
+          STATE.gold -= cost.gold;
+          STATE.materials[cost.material] -= cost.amount;
+          const newItem = { ...recipe, upgradeLevel: 0 };
+          STATE.inventory.push(newItem);
+          forgeMessage = `Crafted ${recipe.name}!`;
+          forgeMessageTimer = 60;
+          saveGame();
+        } else {
+          forgeMessage = 'Not enough resources!';
+          forgeMessageTimer = 60;
+        }
+      } else {
+        // Combo recipe craft
+        const comboIdx = forgeCursor - recipes.length;
+        const combo = combos[comboIdx];
+        if (!combo) return;
+        // Find and remove ingredients from inventory
+        const toRemove = [];
+        for (const ingName of combo.ingredients) {
+          const idx = STATE.inventory.findIndex(item => {
+            const baseName = item.name.replace(/ \+\d$/, '');
+            return baseName === ingName && item !== STATE.equipped.weapon && item !== STATE.equipped.armor && !toRemove.includes(item);
+          });
+          if (idx === -1) { forgeMessage = 'Missing ingredients!'; forgeMessageTimer = 60; return; }
+          toRemove.push(STATE.inventory[idx]);
+        }
+        for (const item of toRemove) {
+          const idx = STATE.inventory.indexOf(item);
+          if (idx !== -1) STATE.inventory.splice(idx, 1);
+        }
+        const resultTemplate = EQUIPMENT_TABLE.find(e => e.name === combo.result);
+        if (resultTemplate) {
+          const newItem = { ...resultTemplate, upgradeLevel: 0 };
+          STATE.inventory.push(newItem);
+          forgeMessage = `Combined into ${combo.result}!`;
+          forgeMessageTimer = 90;
+          saveGame();
+        }
       }
     }
   } else {
@@ -1488,6 +1779,7 @@ function drawForge() {
   // Tabs
   drawStr(3, 4, '[1] Craft', forgeTab === 0 ? '#fff' : '#666');
   drawStr(15, 4, '[2] Upgrade', forgeTab === 1 ? '#fff' : '#666');
+  drawStr(29, 4, '[3] Experiment', forgeTab === 2 ? '#fff' : '#666');
   for (let c = 0; c < COLS; c++) drawStr(c, 5, '\u2500', '#444');
 
   // Resources bar
@@ -1500,37 +1792,80 @@ function drawForge() {
     }
   }
 
-  if (forgeTab === 0) {
+  if (forgeTab === 2) {
+    // Experiment tab
+    drawBox(1, 6, 98, 26, ' EXPERIMENT ', '#fa5');
+    drawStr(3, 8, 'Select a material to experiment with. 60% success rate.', '#aaa');
+    drawStr(3, 9, 'Success: discover a recipe & craft the item. Failure: lose half materials.', '#888');
+    drawBoxDivider(1, 10, 98, '#553');
+
+    const materialNames = ['bone','iron','crystal','shadow','ember'];
+    const availableMats = materialNames.filter((m, i) => i < STATE.unlockedAreas);
+    for (let i = 0; i < availableMats.length; i++) {
+      const mat = availableMats[i];
+      const tier = materialNames.indexOf(mat);
+      const cost = FORGE_MATERIAL_COSTS[tier];
+      const selected = i === experimentMaterialCursor;
+      const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount;
+      const undiscCount = EQUIPMENT_TABLE.filter(e => e.tier === tier && !e.combo && !STATE.discoveredRecipes.includes(e.name)).length;
+      const color = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
+      const row = 12 + i * 3;
+      if (selected) drawStr(3, row, '>', '#fff');
+      drawStr(5, row, `${mat.charAt(0).toUpperCase() + mat.slice(1)} (Tier ${tier})`, color);
+      drawStr(5, row + 1, `Cost: ${cost.amount} ${cost.material} + ${cost.gold}g   Have: ${STATE.materials[mat] || 0} ${mat}, ${STATE.gold}g`, '#888');
+      drawStr(5, row + 2, undiscCount > 0 ? `${undiscCount} recipe(s) to discover` : 'All discovered!', undiscCount > 0 ? '#5a5' : '#888');
+    }
+  } else if (forgeTab === 0) {
     // Craft tab
     drawBox(1, 6, 98, 26, ' CRAFT RECIPES ', '#f85');
-    drawStr(3, 8, 'NAME                  SLOT       COST              STATS', '#888');
-    drawBoxDivider(1, 9, 98, '#553');
 
     const recipes = getForgeRecipes();
-    const maxVisible = 12;
-    const startIdx = Math.max(0, forgeCursor - maxVisible + 1);
-    for (let i = startIdx; i < Math.min(recipes.length, startIdx + maxVisible); i++) {
-      const recipe = recipes[i];
-      const cost = FORGE_MATERIAL_COSTS[recipe.tier];
-      const selected = i === forgeCursor;
-      const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount;
-      const prefix = selected ? '> ' : '  ';
-      const nameColor = RARITY_COLORS[recipe.rarity] || '#aaa';
-      const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
-      const row = 10 + (i - startIdx) * 2;
-      const nameStr = recipe.name.padEnd(20);
-      const slotStr = recipe.slot.padEnd(10);
-      const costStr = `${cost.amount} ${cost.material} + ${cost.gold}g`;
-      if (selected) drawStr(3, row, '>', '#fff');
-      drawStr(5, row, `${nameStr}`, nameColor);
-      drawStr(5 + nameStr.length + 1, row, `${slotStr} ${costStr.padEnd(18)}`, detailColor);
-      let statStr = '';
-      if (recipe.attack) statStr += `ATK+${recipe.attack} `;
-      if (recipe.defense) statStr += `DEF+${recipe.defense} `;
-      if (recipe.hp) statStr += `HP+${recipe.hp} `;
-      if (recipe.critChance) statStr += `CRIT+${(recipe.critChance*100).toFixed(0)}% `;
-      if (recipe.attackSpeed) statStr += `SPD+${recipe.attackSpeed.toFixed(1)}`;
-      drawStr(5, row + 1, statStr, '#666');
+    const combos = getAvailableComboRecipes();
+    const totalEntries = recipes.length + combos.length;
+
+    if (totalEntries === 0) {
+      drawStr(3, 9, 'No recipes known.', '#888');
+      drawStr(3, 11, 'Experiment at the forge or find recipe scrolls!', '#adf');
+    } else {
+      drawStr(3, 8, 'NAME                  SLOT       COST              STATS', '#888');
+      drawBoxDivider(1, 9, 98, '#553');
+
+      const maxVisible = 12;
+      const startIdx = Math.max(0, forgeCursor - maxVisible + 1);
+      for (let i = startIdx; i < Math.min(totalEntries, startIdx + maxVisible); i++) {
+        const selected = i === forgeCursor;
+        const row = 10 + (i - startIdx) * 2;
+
+        if (i < recipes.length) {
+          // Normal discovered recipe
+          const recipe = recipes[i];
+          const cost = FORGE_MATERIAL_COSTS[recipe.tier];
+          const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount;
+          const nameColor = getRarityColor(recipe.rarity);
+          const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
+          const nameStr = recipe.name.padEnd(20);
+          const slotStr = recipe.slot.padEnd(10);
+          const costStr = `${cost.amount} ${cost.material} + ${cost.gold}g`;
+          if (selected) drawStr(3, row, '>', '#fff');
+          drawStr(5, row, `${nameStr}`, nameColor);
+          drawStr(5 + nameStr.length + 1, row, `${slotStr} ${costStr.padEnd(18)}`, detailColor);
+          let statStr = '';
+          if (recipe.attack) statStr += `ATK+${recipe.attack} `;
+          if (recipe.defense) statStr += `DEF+${recipe.defense} `;
+          if (recipe.hp) statStr += `HP+${recipe.hp} `;
+          if (recipe.critChance) statStr += `CRIT+${(recipe.critChance*100).toFixed(0)}% `;
+          if (recipe.attackSpeed) statStr += `SPD+${recipe.attackSpeed.toFixed(1)}`;
+          drawStr(5, row + 1, statStr, '#666');
+        } else {
+          // Combo recipe
+          const combo = combos[i - recipes.length];
+          const resultItem = EQUIPMENT_TABLE.find(e => e.name === combo.result);
+          const nameColor = resultItem ? getRarityColor(resultItem.rarity) : '#fa5';
+          if (selected) drawStr(3, row, '>', '#fff');
+          drawStr(5, row, `Combine: ${combo.ingredients.join(' + ')}`, nameColor);
+          drawStr(5, row + 1, `=> ${combo.result}`, selected ? '#fff' : '#adf');
+        }
+      }
     }
   } else {
     // Upgrade tab
@@ -1550,7 +1885,7 @@ function drawForge() {
       const selected = i === forgeUpgradeCursor;
       const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.materialAmount;
       const prefix = selected ? '> ' : '  ';
-      const nameColor = RARITY_COLORS[item.rarity] || '#aaa';
+      const nameColor = getRarityColor(item.rarity) || '#aaa';
       const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
       const row = 10 + (i - startIdx) * 2;
       const lvl = item.upgradeLevel || 0;
@@ -1579,7 +1914,7 @@ function drawForge() {
   }
 
   drawBox(0, 34, 100, 3, null, '#555');
-  drawStr(3, 35, '1/2 tabs  Arrows/Scroll+Enter craft/upgrade  S/R/T filters(upgrade)  Esc leave', '#666');
+  drawStr(3, 35, '1/2/3 tabs  Arrows/Scroll+Enter craft/upgrade/experiment  S/R/T filters  Esc', '#666');
 }
 
 // ============================================================
@@ -1795,7 +2130,7 @@ function drawEnchant() {
       const selected = i === enchantItemCursor;
       const prefix = selected ? '> ' : '  ';
       const enchName = item.enchantment ? ` [${item.enchantment.name}]` : '';
-      const color = selected ? '#fff' : RARITY_COLORS[item.rarity];
+      const color = selected ? '#fff' : getRarityColor(item.rarity);
       drawStr(3, 8 + (i - itemStartIdx) * 2, `${prefix}${item.name}${enchName}`, color);
       if (selected && item.enchantment) {
         drawStr(5, 9 + (i - itemStartIdx) * 2, `Current: ${item.enchantment.name}`, item.enchantment.color);
@@ -1827,7 +2162,7 @@ function drawEnchant() {
     if (enchantRerollConfirm && enchantRerollPreview) {
       // Show comparison
       const item = items[enchantRerollCursor];
-      drawStr(3, 8, `Rerolling: ${item.name}`, RARITY_COLORS[item.rarity]);
+      drawStr(3, 8, `Rerolling: ${item.name}`, getRarityColor(item.rarity));
       drawBoxDivider(1, 9, 98, '#553');
       drawStr(3, 10, 'STAT        CURRENT     NEW', '#888');
       let row = 12;
@@ -1856,7 +2191,7 @@ function drawEnchant() {
         const selected = i === enchantRerollCursor;
         const canAfford = STATE.gold >= 20 && (STATE.materials[mat] || 0) >= 3;
         const prefix = selected ? '> ' : '  ';
-        const color = selected ? '#fff' : RARITY_COLORS[item.rarity];
+        const color = selected ? '#fff' : getRarityColor(item.rarity);
         const row = 10 + (i - startIdx) * 2;
         drawStr(3, row, `${prefix}${item.name.padEnd(20)} T${item.tier || 0}         3 ${mat} + 20g`, color);
         if (!canAfford && !selected) drawStr(70, row, '(need resources)', '#555');
@@ -1930,12 +2265,12 @@ function drawInventory() {
   drawStr(3, 9, `Speed: ${stats.attackSpeed.toFixed(1)}`, '#adf');
   drawBoxDivider(1, 10, 35, '#553');
   drawStr(3, 11, 'Equipped:', '#aaa');
-  for (const slot of ['weapon','armor','accessory']) {
+  for (const slot of ['weapon','armor']) {
     const item = STATE.equipped[slot];
-    const row = slot === 'weapon' ? 12 : slot === 'armor' ? 13 : 14;
+    const row = slot === 'weapon' ? 12 : 13;
     let name = item ? item.name : '(none)';
     if (item && item.enchantment) name += ` [${item.enchantment.name}]`;
-    drawStr(3, row, `${slot}: ${name}`, item ? RARITY_COLORS[item.rarity] : '#555');
+    drawStr(3, row, `${slot}: ${name}`, item ? getRarityColor(item.rarity) : '#555');
   }
   drawBoxDivider(1, 15, 35, '#553');
   drawStr(3, 16, `Gold: ${STATE.gold}`, '#fd0');
@@ -1960,7 +2295,7 @@ function drawInventory() {
     const selected = i === invCursor;
     const equipped = STATE.equipped[item.slot] === item;
     const prefix = (selected ? '> ' : '  ') + (equipped ? '[E] ' : '    ');
-    const color = selected ? '#fff' : RARITY_COLORS[item.rarity];
+    const color = selected ? '#fff' : getRarityColor(item.rarity);
     let nameStr = item.name;
     if (item.enchantment) nameStr += '*';
     nameStr = nameStr.padEnd(25);
@@ -1971,7 +2306,7 @@ function drawInventory() {
   drawBox(1, 21, 98, 12, ' ITEM DETAILS ', '#888');
   if (filtered.length > 0 && invCursor < filtered.length) {
     const item = filtered[invCursor];
-    drawStr(3, 23, item.name, RARITY_COLORS[item.rarity]);
+    drawStr(3, 23, item.name, getRarityColor(item.rarity));
     let subInfo = `Slot: ${item.slot}    Rarity: ${item.rarity}`;
     if (item.upgradeLevel) subInfo += `    Upgrade: +${item.upgradeLevel}`;
     drawStr(3, 24, subInfo, '#888');
@@ -2042,6 +2377,10 @@ function drawWinScreen() {
 // MAIN LOOP
 // ============================================================
 loadGame();
+if (!STATE.inventory.some(item => item.name === 'Ouroboros Stone')) {
+  const template = EQUIPMENT_TABLE.find(e => e.name === 'Ouroboros Stone');
+  STATE.inventory.push({ ...template });
+}
 
 function gameLoop() {
   clearGrid();
