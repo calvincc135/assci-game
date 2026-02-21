@@ -379,6 +379,7 @@ const ENCHANTMENTS = [
 // ============================================================
 let particles = [];
 let floatingTexts = [];
+let heroProjectiles = [];
 
 function addParticle(x, y, ch, color, vx, vy, life) {
   particles.push({ x, y, ch, color, vx, vy, life, maxLife: life });
@@ -680,6 +681,7 @@ function initAdventure() {
   STATE.lootMaterials = {};
   particles = [];
   floatingTexts = [];
+  heroProjectiles = [];
   advState = {
     scrollX: 0,
     heroCol: 20,
@@ -759,6 +761,106 @@ function spawnWave() {
   advState.waveSpawned = true;
 }
 
+function handleEnemyDeath(target) {
+  target.alive = false;
+  target.deathAnim = 30;
+  // Death explosion
+  for (const line of target.sprite) {
+    for (const ch of line) {
+      if (ch !== ' ') {
+        addParticle(target.col + Math.random()*6, target.row + Math.random()*4,
+          ch, target.color, (Math.random()-0.5)*0.7, (Math.random()-0.5)*0.5, 35);
+      }
+    }
+  }
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    addParticle(target.col + 2, target.row + 1,
+      '*', '#fff', Math.cos(angle) * 0.6, Math.sin(angle) * 0.4, 20);
+  }
+  for (let i = 0; i < 4; i++) {
+    addParticle(target.col + Math.random()*5, target.row + Math.random()*3,
+      '\u2591', '#555', (Math.random()-0.5)*0.05, -0.03, 40);
+  }
+
+  const goldDrop = 3 + Math.floor(Math.random() * 5) + STATE.currentArea * 2;
+  STATE.lootGold += goldDrop;
+  addFloatingText(target.col, target.row - 2, `+${goldDrop}g`, '#fd0');
+
+  const expAmount = target.isBoss
+    ? 25 + STATE.currentArea * 10
+    : 5 + STATE.currentArea * 3;
+  addExp(expAmount);
+  addFloatingText(target.col + 4, target.row - 2, `+${expAmount}exp`, '#0ff');
+
+  if (Math.random() < 0.3) {
+    const mat = AREAS[STATE.currentArea].material;
+    STATE.lootMaterials[mat] = (STATE.lootMaterials[mat] || 0) + 1;
+  }
+
+  if (target.isBoss) {
+    advState.chestItem = generateDrop(STATE.currentArea);
+    advState.chestGold = 15 + STATE.currentArea * 10;
+    const mat = AREAS[STATE.currentArea].material;
+    const matCount = 2 + Math.floor(Math.random() * 2);
+    advState.chestMaterials = {};
+    advState.chestMaterials[mat] = matCount;
+    advState.showChest = true;
+  }
+}
+
+function updateHeroProjectiles() {
+  for (let i = heroProjectiles.length - 1; i >= 0; i--) {
+    const p = heroProjectiles[i];
+    p.x += p.vx;
+
+    // Trail particles
+    if (Math.random() < 0.5) {
+      addParticle(p.x - 1, p.y + 1, '\u00B7', p.isCrit ? '#ff0' : '#aaa', -0.3, (Math.random()-0.5)*0.1, 8);
+    }
+
+    // Check collision with alive enemies
+    for (const e of advState.enemies) {
+      if (!e.alive) continue;
+      if (p.hitEnemies.has(e)) continue;
+      if (Math.abs(p.x - e.col) < 3) {
+        e.currentHp -= p.dmg;
+        e.hitFlash = 9;
+        p.hitEnemies.add(e);
+
+        if (p.isCrit) {
+          addFloatingText(e.col, e.row - 1, 'CRIT! ' + String(p.dmg), '#ff0');
+          const burstChars = ['*', '\u2605', '*', '\u2605'];
+          for (let j = 0; j < 8; j++) {
+            const angle = (j / 8) * Math.PI * 2;
+            addParticle(e.col + 2, e.row + 1,
+              burstChars[j % burstChars.length], '#ff0',
+              Math.cos(angle) * 0.5, Math.sin(angle) * 0.3, 14);
+          }
+        } else {
+          addFloatingText(e.col, e.row - 1, String(p.dmg), '#fff');
+        }
+
+        if (e.currentHp <= 0) {
+          handleEnemyDeath(e);
+        }
+
+        p.dmg = Math.floor(p.dmg * 0.8);
+        p.pierceLeft--;
+        if (p.pierceLeft <= 0) {
+          heroProjectiles.splice(i, 1);
+          break;
+        }
+      }
+    }
+
+    // Remove if off-screen
+    if (p.x > 100) {
+      heroProjectiles.splice(i, 1);
+    }
+  }
+}
+
 function updateAdventure() {
   advState.frame++;
   const stats = getHeroStats();
@@ -827,6 +929,7 @@ function updateAdventure() {
         STATE.unlockedAreas++;
       }
       saveGame();
+      heroProjectiles = [];
       STATE.scene = 'camp';
     }
     return;
@@ -842,90 +945,42 @@ function updateAdventure() {
 
   if (advState.heroAttackTimer >= heroAtkInterval) {
     advState.heroAttackTimer = 0;
-    let target = null, minDist = 999;
-    for (const e of advState.enemies) {
-      if (!e.alive) continue;
-      const d = e.col - advState.heroCol;
-      if (d < minDist) { minDist = d; target = e; }
-    }
-    if (target) {
-      advState.heroAttackAnim = 36; // 2x slower (was 18)
+    let hasAlive = advState.enemies.some(e => e.alive);
+    if (hasAlive) {
+      advState.heroAttackAnim = 36;
       const isCrit = Math.random() < stats.critChance;
-      let dmg = Math.max(1, stats.attack - target.defense);
+      // Use lowest-defense alive enemy for base damage calc
+      let minDef = 999;
+      for (const e of advState.enemies) {
+        if (e.alive && e.defense < minDef) minDef = e.defense;
+      }
+      let dmg = Math.max(1, stats.attack - minDef);
       if (isCrit) dmg *= 2;
-      target.currentHp -= dmg;
-      target.hitFlash = 9;
+
+      // Spawn projectile
+      heroProjectiles.push({
+        x: advState.heroCol + 3,
+        y: advState.heroRow,
+        vx: 2.0,
+        vy: 0,
+        dmg,
+        isCrit,
+        pierceLeft: 3,
+        hitEnemies: new Set()
+      });
+
+      // Slash launch particles
       const slashChars = ['/', '|', '\\'];
       for (let i = 0; i < 4; i++) {
         const ch = slashChars[i % slashChars.length];
         addParticle(advState.heroCol + 3 + i * 1.5, advState.heroRow - 1 + i * 0.5,
           ch, '#fff', 1.0, (i - 1.5) * 0.15, 10);
       }
-      if (isCrit) {
-        addFloatingText(target.col, target.row - 1, 'CRIT! ' + String(dmg), '#ff0');
-        const burstChars = ['*', '\u2605', '*', '\u2605'];
-        for (let i = 0; i < 8; i++) {
-          const angle = (i / 8) * Math.PI * 2;
-          addParticle(target.col + 2, target.row + 1,
-            burstChars[i % burstChars.length], '#ff0',
-            Math.cos(angle) * 0.5, Math.sin(angle) * 0.3, 14);
-        }
-      } else {
-        addFloatingText(target.col, target.row - 1, String(dmg), '#fff');
-      }
-      if (target.currentHp <= 0) {
-        target.alive = false;
-        target.deathAnim = 30;
-        // Death explosion
-        for (const line of target.sprite) {
-          for (const ch of line) {
-            if (ch !== ' ') {
-              addParticle(target.col + Math.random()*6, target.row + Math.random()*4,
-                ch, target.color, (Math.random()-0.5)*0.7, (Math.random()-0.5)*0.5, 35);
-            }
-          }
-        }
-        for (let i = 0; i < 6; i++) {
-          const angle = (i / 6) * Math.PI * 2;
-          addParticle(target.col + 2, target.row + 1,
-            '*', '#fff', Math.cos(angle) * 0.6, Math.sin(angle) * 0.4, 20);
-        }
-        for (let i = 0; i < 4; i++) {
-          addParticle(target.col + Math.random()*5, target.row + Math.random()*3,
-            '\u2591', '#555', (Math.random()-0.5)*0.05, -0.03, 40);
-        }
-
-        // LOOT CHANGES: Gold + EXP + materials only (no equipment from regular enemies)
-        const goldDrop = 3 + Math.floor(Math.random() * 5) + STATE.currentArea * 2;
-        STATE.lootGold += goldDrop;
-        addFloatingText(target.col, target.row - 2, `+${goldDrop}g`, '#fd0');
-
-        // EXP drop
-        const expAmount = target.isBoss
-          ? 25 + STATE.currentArea * 10
-          : 5 + STATE.currentArea * 3;
-        addExp(expAmount);
-        addFloatingText(target.col + 4, target.row - 2, `+${expAmount}exp`, '#0ff');
-
-        // Material drop (30% chance)
-        if (Math.random() < 0.3) {
-          const mat = AREAS[STATE.currentArea].material;
-          STATE.lootMaterials[mat] = (STATE.lootMaterials[mat] || 0) + 1;
-        }
-
-        // Boss: prepare chest (no direct equipment drop)
-        if (target.isBoss) {
-          advState.chestItem = generateDrop(STATE.currentArea);
-          advState.chestGold = 15 + STATE.currentArea * 10;
-          const mat = AREAS[STATE.currentArea].material;
-          const matCount = 2 + Math.floor(Math.random() * 2); // 2-3
-          advState.chestMaterials = {};
-          advState.chestMaterials[mat] = matCount;
-          advState.showChest = true;
-        }
-      }
     }
   }
+
+  // Update hero projectiles
+  updateHeroProjectiles();
 
   // Enemy movement and attacks
   for (const e of advState.enemies) {
@@ -969,14 +1024,16 @@ function updateAdventure() {
       if (STATE.heroHp <= 0) {
         STATE.heroHp = 0;
         STATE.gold = Math.floor(STATE.gold / 2);
+        heroProjectiles = [];
         STATE.scene = 'gameOver';
         return;
       }
     }
   }
 
-  // Check all enemies dead
+  // Check all enemies dead (clear projectiles on wave end)
   if (advState.enemies.every(e => !e.alive && e.deathAnim <= 0)) {
+    heroProjectiles = [];
     // If boss was killed, show chest screen
     if (advState.showChest) {
       advState.phase = 'chest';
@@ -1072,6 +1129,15 @@ function drawAdventure() {
       drawStr(Math.round(e.col) - 1, drawRow - 2, e.name, '#888');
       drawStr(Math.round(e.col) - 1, drawRow - 1, '[' + '#'.repeat(filled) + '-'.repeat(barW - filled) + ']', '#a55');
     }
+  }
+
+  // Hero projectiles
+  for (const p of heroProjectiles) {
+    const col = Math.round(p.x);
+    const row = Math.round(p.y) + 1;
+    const color = p.isCrit ? '#ff0' : '#fff';
+    drawStr(col, row, '\u25B8', color);
+    drawStr(col - 1, row, '\u2500', color);
   }
 
   drawParticles();
@@ -1449,7 +1515,7 @@ function drawForge() {
       const selected = i === forgeCursor;
       const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.amount;
       const prefix = selected ? '> ' : '  ';
-      const nameColor = canAfford ? RARITY_COLORS[recipe.rarity] : '#555';
+      const nameColor = RARITY_COLORS[recipe.rarity] || '#aaa';
       const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
       const row = 10 + (i - startIdx) * 2;
       const nameStr = recipe.name.padEnd(20);
@@ -1484,7 +1550,7 @@ function drawForge() {
       const selected = i === forgeUpgradeCursor;
       const canAfford = STATE.gold >= cost.gold && (STATE.materials[cost.material] || 0) >= cost.materialAmount;
       const prefix = selected ? '> ' : '  ';
-      const nameColor = canAfford ? RARITY_COLORS[item.rarity] : '#555';
+      const nameColor = RARITY_COLORS[item.rarity] || '#aaa';
       const detailColor = selected ? '#fff' : (canAfford ? '#ccc' : '#555');
       const row = 10 + (i - startIdx) * 2;
       const lvl = item.upgradeLevel || 0;
@@ -1781,15 +1847,19 @@ function drawEnchant() {
     } else {
       drawStr(3, 8, 'NAME                  TIER       COST', '#888');
       drawBoxDivider(1, 9, 98, '#553');
-      for (let i = 0; i < Math.min(items.length, 12); i++) {
+      const maxVisible = 7;
+      const startIdx = Math.max(0, enchantRerollCursor - maxVisible + 1);
+      for (let i = startIdx; i < Math.min(items.length, startIdx + maxVisible); i++) {
         const item = items[i];
         const materialNames = ['bone','iron','crystal','shadow','ember'];
         const mat = materialNames[item.tier || 0];
         const selected = i === enchantRerollCursor;
         const canAfford = STATE.gold >= 20 && (STATE.materials[mat] || 0) >= 3;
         const prefix = selected ? '> ' : '  ';
-        const color = selected ? '#fff' : (canAfford ? RARITY_COLORS[item.rarity] : '#555');
-        drawStr(3, 10 + i * 2, `${prefix}${item.name.padEnd(20)} T${item.tier || 0}         3 ${mat} + 20g`, color);
+        const color = selected ? '#fff' : RARITY_COLORS[item.rarity];
+        const row = 10 + (i - startIdx) * 2;
+        drawStr(3, row, `${prefix}${item.name.padEnd(20)} T${item.tier || 0}         3 ${mat} + 20g`, color);
+        if (!canAfford && !selected) drawStr(70, row, '(need resources)', '#555');
         if (selected) {
           let statStr = '';
           if (item.attack) statStr += `ATK:${item.attack} `;
@@ -1797,8 +1867,11 @@ function drawEnchant() {
           if (item.hp) statStr += `HP:${item.hp} `;
           if (item.critChance) statStr += `CRIT:${(item.critChance*100).toFixed(0)}% `;
           if (item.attackSpeed) statStr += `SPD:${item.attackSpeed.toFixed(1)}`;
-          drawStr(5, 11 + i * 2, `Current: ${statStr}`, '#888');
+          drawStr(5, row + 1, `Current: ${statStr}`, '#888');
         }
+      }
+      if (items.length > maxVisible) {
+        drawStr(3, 10 + maxVisible * 2, `\u2191\u2193 ${enchantRerollCursor + 1}/${items.length}`, '#666');
       }
     }
   }
