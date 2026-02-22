@@ -975,7 +975,11 @@ function updateAdventure() {
         e.walkCycle = (e.walkCycle || 0) + 1;
       }
     }
-    if (advState.walkTimer <= 0) {
+    const heroWeapon = STATE.equipped.weapon?.weaponType || 'melee';
+    const closeEnough = heroWeapon === 'ranged'
+      || advState.enemies.some(e => e.alive && (e.col - advState.heroCol) <= MELEE_RANGE + 3)
+      || advState.enemies.some(e => e.alive && (e.col - advState.heroCol) <= e.targetRange + 1);
+    if (advState.walkTimer <= 0 && closeEnough) {
       advState.phase = 'combat';
     }
     return;
@@ -1067,6 +1071,12 @@ function updateAdventure() {
 
   if (!anyInRange) {
     advState.heroAttackTimer = heroAtkInterval; // Primed to fire instantly
+    if (heroWeaponType !== 'ranged') {
+      for (const e of advState.enemies) {
+        if (e.alive) e.col -= 0.3;
+      }
+      advState.scrollX += 0.3;
+    }
   } else {
     advState.heroAttackTimer += 8.33;
   }
@@ -1277,23 +1287,26 @@ function drawAdventure() {
     const isHeavy = STATE.equipped.weapon?.heavy;
 
     if (isHeavy) {
-      // Down-to-up swing, hero recoils visually
-      if (t > 24) heroDrawCol = advState.heroCol - 1;
+      // Heavy: drag from ground upward, hero recoils
       if (t > 24) {
-        drawStr(advState.heroCol + 3, advState.heroRow + 2, '\\', weaponColor);
+        heroDrawCol = advState.heroCol - 1;
+        drawStr(advState.heroCol + 3, advState.heroRow + 3, '_/', weaponColor);
       } else if (t > 12) {
-        drawStr(advState.heroCol + 3, advState.heroRow + 1, '\u2500', weaponColor);
+        heroDrawCol = advState.heroCol - 1;
+        drawStr(advState.heroCol + 3, advState.heroRow + 1, '\u2500\u2500', weaponColor);
       } else {
-        drawStr(advState.heroCol + 3, advState.heroRow - 1, '/', weaponColor);
+        drawStr(advState.heroCol + 3, advState.heroRow - 2, '|', weaponColor);
+        drawStr(advState.heroCol + 3, advState.heroRow - 1, '|', weaponColor);
       }
     } else {
-      // Up-to-down swing (light)
+      // Light: small sword |_ swinging top-to-bottom
       if (t > 24) {
-        drawStr(advState.heroCol + 3, advState.heroRow - 1, '/', weaponColor);
+        drawStr(advState.heroCol + 3, advState.heroRow - 1, '|', weaponColor);
       } else if (t > 12) {
-        drawStr(advState.heroCol + 3, advState.heroRow + 1, '\u2500', weaponColor);
+        drawStr(advState.heroCol + 3, advState.heroRow + 1, '\u2500|', weaponColor);
       } else {
-        drawStr(advState.heroCol + 3, advState.heroRow + 2, '\\', weaponColor);
+        drawStr(advState.heroCol + 3, advState.heroRow + 2, '|', weaponColor);
+        drawStr(advState.heroCol + 3, advState.heroRow + 3, '_', weaponColor);
       }
     }
   }
